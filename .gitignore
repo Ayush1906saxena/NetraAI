@@ -34,8 +34,8 @@ checkpoints/
 wandb/
 mlruns/
 
-# Data
-data/
+# Data (datasets, not source code)
+/data/
 *.dvc
 /dvc.lock
 

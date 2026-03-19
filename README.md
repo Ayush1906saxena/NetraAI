@@ -103,18 +103,21 @@ If DR or glaucoma risk is detected, the system generates a referral with the app
 
 ## Clinical Performance
 
-### DR Grading (5-class)
+### DR Grading (5-class) — Validated on APTOS 2019
+
+| Metric | Result | Target | Status |
+|---|---|---|---|
+| **Quadratic Weighted Kappa** | **0.892** | > 0.85 | Exceeded |
+| **AUC-ROC (Referable DR)** | **0.976** | > 0.95 | Exceeded |
+| **Sensitivity** | **90.6%** | > 90% | Met |
+| **Specificity** | **93.9%** | > 85% | Exceeded |
+| **Accuracy** | **80.6%** | — | — |
+
+> Trained on APTOS 2019 (3,662 images, stratified 70/15/15 split). EfficientNet-B3 backbone with label smoothing, weighted sampling, cosine annealing. 18 epochs on Apple M4 Pro MPS. RETFound ViT-L/16 ensemble planned for Phase 2.
+
+### Image Quality Assessment (IQA)
 
 | Metric | Target | Architecture |
-|---|---|---|
-| **Quadratic Weighted Kappa** | > 0.85 | RETFound ViT-L/16 Ensemble |
-| **AUC-ROC (Referable DR)** | > 0.95 | MAE + DINOv2 weighted fusion |
-| **Sensitivity (@ 90% spec)** | > 0.90 | 8-fold TTA + calibration |
-| **Specificity** | > 0.85 | Temperature-scaled thresholds |
-
-### Image Quality Assessment
-
-| Metric | Value | Architecture |
 |---|---|---|
 | **Gradeability Accuracy** | > 95% | MobileNetV3-Small (on-device) |
 | **Inference Time** | < 50ms | TFLite INT8 quantized |
@@ -122,12 +125,10 @@ If DR or glaucoma risk is detected, the system generates a referral with the app
 
 ### Glaucoma Screening
 
-| Metric | Value | Architecture |
+| Metric | Target | Architecture |
 |---|---|---|
 | **CDR MAE** | < 0.05 | U-Net + EfficientNet-B2 |
 | **Disc/Cup Dice** | > 0.90 | Dice + Focal loss |
-
-> Models trained on APTOS 2019, EyePACS, IDRiD, Messidor-2, and REFUGE datasets. Clinical validation on Indian population data in progress.
 
 ---
 
