@@ -23,8 +23,7 @@
   <a href="#how-it-works">How It Works</a> &bull;
   <a href="#clinical-performance">Performance</a> &bull;
   <a href="#architecture">Architecture</a> &bull;
-  <a href="#quick-start">Quick Start</a> &bull;
-  <a href="#business-model">Business Model</a>
+  <a href="#quick-start">Quick Start</a>
 </p>
 
 ---
@@ -273,59 +272,6 @@ python -m ml.scripts.train_quick_test
 # Full DR training (requires APTOS dataset)
 python -m ml.scripts.train_dr
 ```
-
----
-
-## Business Model
-
-### B2B2C — Screening-as-a-Service
-
-```
-Revenue per screening:  ~INR 150 ($1.80)
-  ├── Store keeps:       INR 50-80  (incentive to screen)
-  ├── Netra AI:          INR 50-70  (platform fee)
-  └── Referral partner:  INR 20-30  (if applicable)
-
-Target: 50,000+ stores × 5 screenings/day × 300 days = 75M screenings/year
-```
-
-### Go-to-Market
-1. **Phase 1:** Partner with optical chains (Lenskart, Titan Eye+) — built-in foot traffic of diabetic patients buying reading glasses
-2. **Phase 2:** Expand to pharmacy chains (Apollo, MedPlus) and primary care clinics
-3. **Phase 3:** Enterprise contracts with insurance companies (reduce claim costs via early detection)
-
-### Why Now
-- India's **ABDM** (Ayushman Bharat Digital Mission) is creating unified health records — Netra AI is ABDM-integrated from day one
-- Portable fundus cameras dropped from $30K to $3K in the last 3 years
-- **RETFound** (2023) — first foundation model for retinal images — makes specialist-grade AI accessible
-
----
-
-## Regulatory & Compliance
-
-- **CDSCO Class B Medical Device** pathway (AI-assisted screening, not diagnosis)
-- **HIPAA-equivalent** data handling with encryption at rest and in transit
-- **ABDM/FHIR R4** compliant health records
-- **Clinical validation** protocol designed per STARD guidelines
-- AI disclaimer on every report: *"AI-assisted screening, not a clinical diagnosis"*
-- Full **audit trail** — every action logged with user, timestamp, and IP
-
----
-
-## Roadmap
-
-| Phase | Timeline | Milestone |
-|---|---|---|
-| **Phase 1** | Q1 2026 | DR + Glaucoma screening MVP, 10 pilot stores |
-| **Phase 2** | Q2-Q3 2026 | Multi-disease (AMD, cataracts), 500 stores |
-| **Phase 3** | Q4 2026 | ABDM production integration, insurance partnerships |
-| **Phase 4** | 2027 | 5,000+ stores, clinical validation publication |
-
----
-
-## Team
-
-Built by a team passionate about using AI to solve real healthcare access problems in India.
 
 ---
 
