@@ -8,7 +8,6 @@ from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from server.config import settings
-from server.services.inference import ModelRegistry
 
 # ── Async database engine & session factory ─────────────────────────────
 engine = create_async_engine(
@@ -40,15 +39,28 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             await session.close()
 
 
-def get_models(request: Request) -> ModelRegistry:
-    """Retrieve the ModelRegistry stored in app state during lifespan."""
-    registry: ModelRegistry | None = getattr(request.app.state, "models", None)
+def get_models(request: Request):
+    """Retrieve the legacy ModelRegistry stored in app state during lifespan."""
+    registry = getattr(request.app.state, "models", None)
     if registry is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="ML models not loaded yet",
         )
     return registry
+
+
+def get_inference_service(request: Request):
+    """Retrieve the InferenceService (EfficientNet-B3 DR model) from app state."""
+    from server.services.inference_v2 import InferenceService
+
+    svc: InferenceService | None = getattr(request.app.state, "inference_service", None)
+    if svc is None or not svc.is_loaded:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="DR inference model not loaded",
+        )
+    return svc
 
 
 async def get_current_user(

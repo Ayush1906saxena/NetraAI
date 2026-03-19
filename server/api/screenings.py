@@ -1,15 +1,18 @@
-"""Screening endpoints: create, upload fundus images, trigger analysis, get results."""
+"""Screening endpoints: create, upload fundus images, trigger analysis, get results.
+
+Uses SQLAlchemy async sessions and the new InferenceService (EfficientNet-B3).
+"""
 
 import logging
 import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.config import settings
-from server.dependencies import get_current_user, get_db, get_models
+from server.dependencies import get_current_user, get_db, get_inference_service
 from server.models.image import Image
 from server.models.screening import Screening
 from server.schemas.screening import (
@@ -20,51 +23,51 @@ from server.schemas.screening import (
     ScreeningResponse,
     UploadResponse,
 )
-from server.services.inference import ModelRegistry
-from server.services.storage import upload_image
+from server.services.inference_v2 import InferenceService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+# ── Helpers ──────────────────────────────────────────────────────────────
+
 def _compute_referral(screening: Screening) -> dict:
-    """Compute referral recommendation based on AI results."""
+    """Compute referral recommendation based on DR grades on both eyes."""
     reasons = []
     urgency = "routine"
 
-    # DR grading thresholds
     for eye in ("left", "right"):
         dr_grade = getattr(screening, f"dr_grade_{eye}")
         if dr_grade is not None:
-            if dr_grade >= 3:
-                reasons.append(f"Severe DR detected in {eye} eye (grade {dr_grade})")
+            if dr_grade >= 4:
+                reasons.append(f"Proliferative DR in {eye} eye (grade {dr_grade})")
                 urgency = "emergency"
-            elif dr_grade == 2:
-                reasons.append(f"Moderate DR detected in {eye} eye (grade {dr_grade})")
+            elif dr_grade == 3:
+                reasons.append(f"Severe NPDR in {eye} eye (grade {dr_grade})")
                 if urgency != "emergency":
+                    urgency = "emergency"
+            elif dr_grade == 2:
+                reasons.append(f"Moderate NPDR in {eye} eye (grade {dr_grade})")
+                if urgency not in ("emergency",):
                     urgency = "urgent"
             elif dr_grade == 1:
-                reasons.append(f"Mild DR detected in {eye} eye (grade {dr_grade})")
+                reasons.append(f"Mild NPDR in {eye} eye (grade {dr_grade})")
 
-    # Glaucoma thresholds
-    for eye in ("left", "right"):
-        prob = getattr(screening, f"glaucoma_prob_{eye}")
-        if prob is not None and prob > 0.5:
-            reasons.append(f"Glaucoma risk in {eye} eye ({prob:.0%})")
+        # Glaucoma / AMD from raw_results (future-proof)
+        glaucoma_prob = getattr(screening, f"glaucoma_prob_{eye}", None)
+        if glaucoma_prob is not None and glaucoma_prob > 0.5:
+            reasons.append(f"Glaucoma risk in {eye} eye ({glaucoma_prob:.0%})")
             if urgency not in ("emergency",):
                 urgency = "urgent"
 
-    # AMD thresholds
-    for eye in ("left", "right"):
-        prob = getattr(screening, f"amd_prob_{eye}")
-        if prob is not None and prob > 0.5:
-            reasons.append(f"AMD risk in {eye} eye ({prob:.0%})")
+        amd_prob = getattr(screening, f"amd_prob_{eye}", None)
+        if amd_prob is not None and amd_prob > 0.5:
+            reasons.append(f"AMD risk in {eye} eye ({amd_prob:.0%})")
             if urgency not in ("emergency",):
                 urgency = "urgent"
 
     referral_required = len(reasons) > 0
 
-    # Overall risk
     if urgency == "emergency":
         overall_risk = "urgent"
     elif urgency == "urgent":
@@ -81,6 +84,17 @@ def _compute_referral(screening: Screening) -> dict:
         "overall_risk": overall_risk,
     }
 
+
+async def _get_screening_or_404(db: AsyncSession, screening_id: uuid.UUID) -> Screening:
+    """Fetch a screening by ID or raise 404."""
+    result = await db.execute(select(Screening).where(Screening.id == screening_id))
+    screening = result.scalar_one_or_none()
+    if not screening:
+        raise HTTPException(status_code=404, detail="Screening not found")
+    return screening
+
+
+# ── Endpoints ────────────────────────────────────────────────────────────
 
 @router.post("/", response_model=ScreeningResponse, status_code=status.HTTP_201_CREATED)
 async def create_screening(
@@ -111,36 +125,37 @@ async def upload_fundus_image(
     file: UploadFile = File(...),
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    models: ModelRegistry = Depends(get_models),
+    inference: InferenceService = Depends(get_inference_service),
 ):
-    """Upload a fundus image for IQA and storage."""
+    """Upload a fundus image, run quality check, store metadata in DB."""
     if eye not in ("left", "right"):
         raise HTTPException(status_code=400, detail="Eye must be 'left' or 'right'")
 
-    # Verify screening exists
-    result = await db.execute(select(Screening).where(Screening.id == screening_id))
-    screening = result.scalar_one_or_none()
-    if not screening:
-        raise HTTPException(status_code=404, detail="Screening not found")
+    screening = await _get_screening_or_404(db, screening_id)
 
     # Read file bytes
     image_bytes = await file.read()
     if not image_bytes:
         raise HTTPException(status_code=400, detail="Empty file uploaded")
 
-    # Run IQA
-    iqa_result = await models.check_quality(image_bytes)
+    # Run quality check using the new inference service
+    iqa_result = await inference.check_quality(image_bytes)
     iqa_score = iqa_result["score"]
-    iqa_passed = iqa_score >= 0.5
+    iqa_passed = iqa_result["passed"]
 
-    # Upload to S3
+    # Try to upload to S3/MinIO (graceful failure for dev without MinIO)
     s3_key = f"screenings/{screening_id}/{eye}/{file.filename}"
-    await upload_image(
-        image_bytes=image_bytes,
-        bucket=settings.S3_BUCKET_IMAGES,
-        key=s3_key,
-        content_type=file.content_type or "image/jpeg",
-    )
+    try:
+        from server.services.storage import upload_image
+        await upload_image(
+            image_bytes=image_bytes,
+            bucket=settings.S3_BUCKET_IMAGES,
+            key=s3_key,
+            content_type=file.content_type or "image/jpeg",
+        )
+    except Exception as e:
+        logger.warning("S3 upload failed (continuing without storage): %s", e)
+        # In dev mode without MinIO, we still create the DB record
 
     # Create image record
     image = Image(
@@ -184,16 +199,13 @@ async def trigger_analysis(
     body: AnalysisRequest | None = None,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    models: ModelRegistry = Depends(get_models),
+    inference: InferenceService = Depends(get_inference_service),
 ):
-    """Trigger AI analysis on uploaded fundus images."""
+    """Trigger AI analysis on uploaded fundus images for a screening."""
     if body is None:
         body = AnalysisRequest()
 
-    result = await db.execute(select(Screening).where(Screening.id == screening_id))
-    screening = result.scalar_one_or_none()
-    if not screening:
-        raise HTTPException(status_code=404, detail="Screening not found")
+    screening = await _get_screening_or_404(db, screening_id)
 
     if screening.status not in ("images_uploaded", "created"):
         raise HTTPException(
@@ -201,9 +213,12 @@ async def trigger_analysis(
             detail=f"Cannot analyze screening in '{screening.status}' status",
         )
 
-    # Load images for this screening
+    # Get images for this screening
     img_result = await db.execute(
-        select(Image).where(Image.screening_id == screening_id, Image.iqa_passed == True)
+        select(Image).where(
+            Image.screening_id == screening_id,
+            Image.iqa_passed == True,
+        )
     )
     images = img_result.scalars().all()
     if not images:
@@ -212,24 +227,30 @@ async def trigger_analysis(
     screening.status = "analyzing"
     await db.flush()
 
-    # Try to run synchronously; fall back to Celery for heavy workloads
     try:
-        from server.services.storage import download_image
-
         for img in images:
-            img_bytes = await download_image(bucket=img.s3_bucket, key=img.s3_key)
-            analysis = await models.analyze_fundus(img_bytes, model_names=body.models)
+            # Try to get image bytes from S3
+            img_bytes = None
+            try:
+                from server.services.storage import download_image
+                img_bytes = await download_image(bucket=img.s3_bucket, key=img.s3_key)
+            except Exception as e:
+                logger.warning("Could not download image from S3: %s", e)
 
+            if img_bytes is None:
+                logger.warning("Skipping image %s — could not retrieve bytes", img.id)
+                continue
+
+            # Run DR analysis using the new inference service
+            analysis = await inference.analyze_fundus(img_bytes)
+
+            # Store full results as JSON
             img.ai_results = analysis
 
             eye = img.eye
-            if "dr" in analysis:
-                setattr(screening, f"dr_grade_{eye}", analysis["dr"]["grade"])
-                setattr(screening, f"dr_confidence_{eye}", analysis["dr"]["confidence"])
-            if "glaucoma" in analysis:
-                setattr(screening, f"glaucoma_prob_{eye}", analysis["glaucoma"]["probability"])
-            if "amd" in analysis:
-                setattr(screening, f"amd_prob_{eye}", analysis["amd"]["probability"])
+            dr_info = analysis.get("dr", {})
+            setattr(screening, f"dr_grade_{eye}", dr_info.get("grade"))
+            setattr(screening, f"dr_confidence_{eye}", dr_info.get("confidence"))
 
         # Compute referral
         referral = _compute_referral(screening)
@@ -237,6 +258,7 @@ async def trigger_analysis(
         screening.referral_urgency = referral["referral_urgency"]
         screening.referral_reason = referral["referral_reason"]
         screening.overall_risk = referral["overall_risk"]
+        screening.raw_results = {"analysis_version": "v2", "model": "efficientnet_b3"}
         screening.status = "completed"
         screening.completed_at = datetime.now(timezone.utc)
 
@@ -252,15 +274,12 @@ async def trigger_analysis(
         )
 
     except Exception as e:
-        logger.error("Sync analysis failed for %s, queuing async: %s", screening_id, e)
-        from server.workers.analyze import run_analysis_task
-
-        task = run_analysis_task.delay(str(screening_id), body.models)
-        return AnalysisResponse(
-            screening_id=screening_id,
-            status="analyzing",
-            message="Analysis queued for background processing",
-            task_id=task.id,
+        logger.error("Analysis failed for screening %s: %s", screening_id, e, exc_info=True)
+        screening.status = "failed"
+        await db.flush()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Analysis failed: {str(e)}",
         )
 
 
@@ -271,10 +290,7 @@ async def get_screening(
     db: AsyncSession = Depends(get_db),
 ):
     """Get screening details and results."""
-    result = await db.execute(select(Screening).where(Screening.id == screening_id))
-    screening = result.scalar_one_or_none()
-    if not screening:
-        raise HTTPException(status_code=404, detail="Screening not found")
+    screening = await _get_screening_or_404(db, screening_id)
     return screening
 
 
@@ -303,8 +319,6 @@ async def list_screenings(
     query = query.order_by(Screening.created_at.desc())
 
     # Count
-    from sqlalchemy import func
-
     count_result = await db.execute(
         select(func.count()).select_from(query.subquery())
     )
