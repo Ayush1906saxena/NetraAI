@@ -1,0 +1,91 @@
+<!-- Reusable eye result component -->
+<!-- Expected variables: eye_label, eye_side, fundus_image_base64, gradcam_image_base64,
+     dr_grade, dr_confidence, glaucoma_prob, amd_prob, iqa_score, iqa_passed -->
+
+<div class="eye-result-card">
+    <h3 class="eye-title">{{ eye_label | default("Eye") }} ({{ eye_side | upper }})</h3>
+
+    <div class="eye-images">
+        <div class="image-container">
+            <div class="image-label">{{ fundus_label | default("Fundus Image") }}</div>
+            {% if fundus_image_base64 %}
+            <img src="data:image/jpeg;base64,{{ fundus_image_base64 }}" alt="Fundus {{ eye_side }}" class="fundus-img" />
+            {% else %}
+            <div class="image-placeholder">{{ no_image_label | default("Image not available") }}</div>
+            {% endif %}
+            {% if iqa_score is not none %}
+            <div class="iqa-badge {% if iqa_passed %}iqa-pass{% else %}iqa-fail{% endif %}">
+                {{ quality_label | default("Quality") }}: {{ "%.1f" | format(iqa_score * 100) }}%
+                {% if iqa_passed %}&#x2713;{% else %}&#x2717;{% endif %}
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="image-container">
+            <div class="image-label">{{ gradcam_label | default("GradCAM Heatmap") }}</div>
+            {% if gradcam_image_base64 %}
+            <img src="data:image/jpeg;base64,{{ gradcam_image_base64 }}" alt="GradCAM {{ eye_side }}" class="gradcam-img" />
+            {% else %}
+            <div class="image-placeholder">{{ no_heatmap_label | default("Heatmap not available") }}</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="eye-metrics">
+        <!-- Diabetic Retinopathy -->
+        <div class="metric-row">
+            <div class="metric-name">{{ dr_label | default("Diabetic Retinopathy") }}</div>
+            <div class="metric-value">
+                {% if dr_grade is not none %}
+                    {% set dr_colors = {0: 'green', 1: 'green', 2: 'amber', 3: 'red', 4: 'red'} %}
+                    {% set dr_labels_map = {0: 'No DR', 1: 'Mild', 2: 'Moderate', 3: 'Severe', 4: 'Proliferative'} %}
+                    {% set dr_labels_map_hi = {0: 'कोई DR नहीं', 1: 'हल्का', 2: 'मध्यम', 3: 'गंभीर', 4: 'प्रोलिफरेटिव'} %}
+                    <span class="traffic-light traffic-{{ dr_colors.get(dr_grade, 'green') }}">
+                        {{ dr_grades_display.get(dr_grade, dr_labels_map.get(dr_grade, 'Unknown')) }}
+                    </span>
+                    <span class="confidence">({{ "%.0f" | format(dr_confidence * 100) }}%)</span>
+                {% else %}
+                    <span class="metric-na">{{ na_label | default("N/A") }}</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Glaucoma -->
+        <div class="metric-row">
+            <div class="metric-name">{{ glaucoma_label | default("Glaucoma Suspect") }}</div>
+            <div class="metric-value">
+                {% if glaucoma_prob is not none %}
+                    {% if glaucoma_prob < 0.3 %}
+                        <span class="traffic-light traffic-green">{{ low_risk_label | default("Low Risk") }}</span>
+                    {% elif glaucoma_prob < 0.7 %}
+                        <span class="traffic-light traffic-amber">{{ moderate_risk_label | default("Moderate Risk") }}</span>
+                    {% else %}
+                        <span class="traffic-light traffic-red">{{ high_risk_label | default("High Risk") }}</span>
+                    {% endif %}
+                    <span class="confidence">({{ "%.0f" | format(glaucoma_prob * 100) }}%)</span>
+                {% else %}
+                    <span class="metric-na">{{ na_label | default("N/A") }}</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- AMD -->
+        <div class="metric-row">
+            <div class="metric-name">{{ amd_label | default("Age-related Macular Degeneration") }}</div>
+            <div class="metric-value">
+                {% if amd_prob is not none %}
+                    {% if amd_prob < 0.3 %}
+                        <span class="traffic-light traffic-green">{{ low_risk_label | default("Low Risk") }}</span>
+                    {% elif amd_prob < 0.7 %}
+                        <span class="traffic-light traffic-amber">{{ moderate_risk_label | default("Moderate Risk") }}</span>
+                    {% else %}
+                        <span class="traffic-light traffic-red">{{ high_risk_label | default("High Risk") }}</span>
+                    {% endif %}
+                    <span class="confidence">({{ "%.0f" | format(amd_prob * 100) }}%)</span>
+                {% else %}
+                    <span class="metric-na">{{ na_label | default("N/A") }}</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>

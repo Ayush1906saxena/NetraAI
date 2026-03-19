@@ -1,0 +1,102 @@
+# DR Grading Training Configuration
+# Model: RETFound ViT-Large with LoRA fine-tuning
+# Dataset: APTOS 2019 Blindness Detection
+
+model:
+  name: RETFoundDRGrader
+  num_classes: 5
+  model_variant: mae
+  pretrained_path: weights/RETFound_cfp_weights.pth
+  drop_path: 0.2
+  lora:
+    enabled: true
+    rank: 16
+    alpha: 32
+    dropout: 0.1
+    target_modules:
+      - attn.qkv
+      - attn.proj
+      - mlp.fc1
+      - mlp.fc2
+    modules_to_save:
+      - head
+      - fc_norm
+
+data:
+  dataset: aptos2019
+  data_root: data/processed/aptos2019
+  img_size: 224
+  num_classes: 5
+  num_workers: 4
+  pin_memory: true
+
+training:
+  batch_size: 16
+  epochs: 50
+  lr: 5.0e-4
+  weight_decay: 0.01
+  label_smoothing: 0.1
+  grad_clip_norm: 1.0
+  device: mps
+  use_amp: true
+  seed: 42
+  use_weighted_sampler: true
+
+scheduler:
+  type: warmup_cosine
+  warmup_epochs: 5
+  min_lr: 1.0e-7
+
+early_stopping:
+  patience: 10
+  min_delta: 0.001
+  mode: max  # monitoring QWK
+
+augmentation:
+  train:
+    random_resized_crop:
+      scale: [0.8, 1.0]
+      ratio: [0.9, 1.1]
+    horizontal_flip: 0.5
+    vertical_flip: 0.5
+    random_rotate90: 0.5
+    shift_scale_rotate:
+      shift_limit: 0.05
+      scale_limit: 0.1
+      rotate_limit: 180
+      p: 0.5
+    color_jitter:
+      brightness: 0.15
+      contrast: 0.15
+      saturation: 0.15
+      hue: 0.05
+      p: 0.5
+    clahe:
+      clip_limit: 2.0
+      p: 0.3
+    coarse_dropout:
+      max_holes: 8
+      max_height_ratio: 0.0625  # 1/16
+      max_width_ratio: 0.0625
+      p: 0.3
+    gaussian_blur:
+      blur_limit: [3, 5]
+      p: 0.15
+    gauss_noise: 0.15
+  val:
+    resize: 224
+    normalize: imagenet
+
+logging:
+  wandb: true
+  wandb_project: netra-dr-grading
+  mlflow: true
+  mlflow_experiment: dr-grading
+  mlflow_tracking_uri: mlruns
+  run_name: null  # auto-generated if null
+  log_every_n_steps: 10
+
+output:
+  dir: outputs/dr_grading
+  save_top_k: 3
+  save_last: true

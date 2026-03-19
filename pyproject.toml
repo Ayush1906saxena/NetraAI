@@ -1,0 +1,79 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "netra-ai"
+version = "0.1.0"
+description = "AI-Powered Diabetic Retinopathy Screening Platform"
+requires-python = ">=3.11"
+dependencies = [
+    # ML
+    "torch>=2.5.1",
+    "torchvision>=0.20.1",
+    "timm>=1.0.3",
+    "einops",
+    "peft>=0.14.0",
+    "segmentation-models-pytorch>=0.3.4",
+    "albumentations>=1.4.21",
+    "opencv-python-headless>=4.10.0",
+    "scikit-learn>=1.6.0",
+    "scipy",
+    "pandas",
+    "numpy",
+    "matplotlib",
+    "seaborn",
+    # Backend
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "sqlalchemy>=2.0.36",
+    "alembic>=1.14.0",
+    "asyncpg>=0.30.0",
+    "redis>=5.2.1",
+    "celery[redis]>=5.4.0",
+    "boto3>=1.35.0",
+    "minio>=7.2.12",
+    "python-multipart",
+    "aiofiles",
+    "pydantic>=2.10.0",
+    "pydantic-settings",
+    "python-jose[cryptography]",
+    "passlib[bcrypt]",
+    "jinja2",
+    "weasyprint>=63.1",
+    "pillow",
+    "qrcode[pil]",
+    "httpx",
+    # MLOps
+    "mlflow>=2.19.0",
+    "wandb",
+    "dvc[s3]>=3.56.0",
+    "prometheus-client>=0.21.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "httpx",
+    "factory-boy",
+    "faker",
+    "ruff",
+    "mypy",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NetraAI - Eye Screening Report</title>
+    <style>
+        /* ── Reset & Base ─────────────────────────────────────────────── */
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        @page {
+            size: A4;
+            margin: 12mm 15mm 15mm 15mm;
+        }
+
+        body {
+            font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+            font-size: 10pt;
+            line-height: 1.5;
+            color: #1a1a2e;
+            background: #ffffff;
+        }
+
+        .page {
+            width: 210mm;
+            min-height: 297mm;
+            padding: 0;
+            margin: 0 auto;
+        }
+
+        /* ── Header ───────────────────────────────────────────────────── */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 3px solid #0052cc;
+            padding-bottom: 10px;
+            margin-bottom: 12px;
+        }
+
+        .header-logo {
+            flex: 0 0 auto;
+        }
+
+        .logo {
+            height: 48px;
+            width: auto;
+        }
+
+        .logo-text {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .logo-icon {
+            font-size: 28pt;
+        }
+
+        .logo-name {
+            font-size: 22pt;
+            font-weight: 700;
+            color: #0052cc;
+            letter-spacing: -0.5px;
+        }
+
+        .header-info {
+            flex: 1;
+            text-align: center;
+        }
+
+        .report-title {
+            font-size: 16pt;
+            font-weight: 700;
+            color: #0052cc;
+            margin-bottom: 2px;
+        }
+
+        .header-meta {
+            font-size: 8.5pt;
+            color: #555;
+        }
+
+        .meta-item {
+            margin: 0 10px;
+        }
+
+        .header-badge {
+            flex: 0 0 auto;
+            padding: 8px 18px;
+            border-radius: 6px;
+            font-size: 11pt;
+            font-weight: 700;
+            color: #fff;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .risk-low { background: #22c55e; }
+        .risk-moderate { background: #f59e0b; }
+        .risk-high { background: #ef4444; }
+        .risk-urgent { background: #dc2626; animation: pulse 1.5s infinite; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        /* ── Patient Info Bar ─────────────────────────────────────────── */
+        .patient-info-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px 24px;
+            background: #f0f4ff;
+            border: 1px solid #d0daf0;
+            border-radius: 6px;
+            padding: 8px 14px;
+            margin-bottom: 16px;
+            font-size: 9pt;
+        }
+
+        .info-group {
+            display: flex;
+            gap: 4px;
+        }
+
+        .info-label {
+            font-weight: 600;
+            color: #444;
+        }
+
+        .info-value {
+            color: #1a1a2e;
+        }
+
+        /* ── Eye Result Cards ─────────────────────────────────────────── */
+        .eye-results-container {
+            display: flex;
+            gap: 14px;
+            margin-bottom: 16px;
+        }
+
+        .eye-result-card {
+            flex: 1;
+            border: 1px solid #dde3f0;
+            border-radius: 8px;
+            padding: 12px;
+            background: #fafbfe;
+        }
+
+        .eye-title {
+            font-size: 11pt;
+            font-weight: 700;
+            color: #0052cc;
+            margin-bottom: 10px;
+            border-bottom: 2px solid #0052cc;
+            padding-bottom: 4px;
+        }
+
+        .eye-images {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .image-container {
+            flex: 1;
+            text-align: center;
+        }
+
+        .image-label {
+            font-size: 7.5pt;
+            font-weight: 600;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+
+        .fundus-img, .gradcam-img {
+            width: 100%;
+            max-width: 160px;
+            height: auto;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+        }
+
+        .image-placeholder {
+            width: 100%;
+            max-width: 160px;
+            height: 120px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #eee;
+            border-radius: 6px;
+            font-size: 8pt;
+            color: #999;
+            margin: 0 auto;
+        }
+
+        .iqa-badge {
+            display: inline-block;
+            margin-top: 4px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 7.5pt;
+            font-weight: 600;
+        }
+
+        .iqa-pass {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .iqa-fail {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        /* ── Metrics ──────────────────────────────────────────────────── */
+        .eye-metrics {
+            margin-top: 8px;
+        }
+
+        .metric-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 5px 0;
+            border-bottom: 1px solid #eef1f6;
+        }
+
+        .metric-row:last-child {
+            border-bottom: none;
+        }
+
+        .metric-name {
+            font-size: 9pt;
+            font-weight: 500;
+            color: #333;
+        }
+
+        .metric-value {
+            font-size: 9pt;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .metric-na {
+            color: #999;
+            font-style: italic;
+        }
+
+        /* ── Traffic Light System ─────────────────────────────────────── */
+        .traffic-light {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 10px;
+            font-size: 8.5pt;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        .traffic-green {
+            background: #dcfce7;
+            color: #166534;
+            border: 1px solid #86efac;
+        }
+
+        .traffic-amber {
+            background: #fef3c7;
+            color: #92400e;
+            border: 1px solid #fcd34d;
+        }
+
+        .traffic-red {
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #fca5a5;
+        }
+
+        .confidence {
+            font-size: 8pt;
+            color: #888;
+        }
+
+        /* ── Findings Table ───────────────────────────────────────────── */
+        .findings-section {
+            margin-bottom: 14px;
+        }
+
+        .section-title {
+            font-size: 12pt;
+            font-weight: 700;
+            color: #0052cc;
+            margin-bottom: 8px;
+            padding-bottom: 3px;
+            border-bottom: 2px solid #e0e7ff;
+        }
+
+        .findings-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 9pt;
+        }
+
+        .findings-table th {
+            background: #e0e7ff;
+            color: #1e3a5f;
+            padding: 6px 10px;
+            text-align: left;
+            font-weight: 700;
+            font-size: 8.5pt;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        .findings-table td {
+            padding: 6px 10px;
+            border-bottom: 1px solid #eef1f6;
+        }
+
+        .finding-condition {
+            font-weight: 600;
+        }
+
+        .no-findings {
+            color: #166534;
+            background: #dcfce7;
+            padding: 10px;
+            border-radius: 6px;
+            text-align: center;
+            font-weight: 500;
+        }
+
+        /* ── Referral Section ─────────────────────────────────────────── */
+        .referral-section {
+            margin-bottom: 16px;
+        }
+
+        .referral-card {
+            display: flex;
+            gap: 12px;
+            padding: 12px;
+            border-radius: 8px;
+            align-items: flex-start;
+        }
+
+        .referral-urgency-emergency {
+            background: #fee2e2;
+            border: 2px solid #ef4444;
+        }
+
+        .referral-urgency-urgent {
+            background: #fef3c7;
+            border: 2px solid #f59e0b;
+        }
+
+        .referral-urgency-routine {
+            background: #eff6ff;
+            border: 2px solid #3b82f6;
+        }
+
+        .referral-clear {
+            background: #dcfce7;
+            border: 2px solid #22c55e;
+        }
+
+        .referral-icon {
+            font-size: 20pt;
+            flex: 0 0 auto;
+        }
+
+        .referral-content {
+            flex: 1;
+        }
+
+        .urgency-badge {
+            display: inline-block;
+            padding: 3px 12px;
+            border-radius: 4px;
+            font-size: 9pt;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #fff;
+            margin-bottom: 4px;
+        }
+
+        .urgency-emergency { background: #dc2626; }
+        .urgency-urgent { background: #d97706; }
+        .urgency-routine { background: #2563eb; }
+
+        .referral-message {
+            font-size: 9.5pt;
+            margin-top: 4px;
+        }
+
+        .referral-reason {
+            font-size: 9pt;
+            margin-top: 4px;
+            color: #555;
+        }
+
+        /* ── Disclaimer ───────────────────────────────────────────────── */
+        .disclaimer {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            padding: 10px 14px;
+            margin-bottom: 14px;
+        }
+
+        .disclaimer-title {
+            font-size: 9pt;
+            font-weight: 700;
+            color: #6c757d;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .disclaimer-text {
+            font-size: 7.5pt;
+            color: #6c757d;
+            line-height: 1.5;
+        }
+
+        /* ── Footer ───────────────────────────────────────────────────── */
+        .footer-section {
+            margin-top: auto;
+        }
+
+        .footer-bottom {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-top: 2px solid #0052cc;
+            padding-top: 10px;
+            gap: 14px;
+        }
+
+        .qr-section {
+            flex: 0 0 auto;
+            text-align: center;
+        }
+
+        .qr-code {
+            width: 70px;
+            height: 70px;
+        }
+
+        .qr-label {
+            font-size: 6.5pt;
+            color: #888;
+            margin-top: 2px;
+        }
+
+        .footer-meta {
+            flex: 1;
+            font-size: 8pt;
+            color: #555;
+        }
+
+        .footer-line {
+            margin-bottom: 2px;
+        }
+
+        .mono {
+            font-family: 'Courier New', monospace;
+            font-size: 7.5pt;
+        }
+
+        .footer-branding {
+            flex: 0 0 auto;
+            text-align: right;
+        }
+
+        .powered-by {
+            font-size: 8pt;
+            color: #888;
+            display: block;
+        }
+
+        .version {
+            font-size: 7pt;
+            color: #aaa;
+        }
+
+        /* ── Medical History Section ──────────────────────────────────── */
+        .medical-history {
+            margin-bottom: 14px;
+        }
+
+        .history-grid {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .history-item {
+            flex: 1;
+            min-width: 120px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-size: 9pt;
+        }
+
+        .history-label {
+            font-weight: 600;
+            color: #555;
+            font-size: 7.5pt;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        .history-value {
+            font-size: 10pt;
+            font-weight: 500;
+            color: #1a1a2e;
+        }
+
+        /* ── Print styles ─────────────────────────────────────────────── */
+        @media print {
+            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .page { page-break-after: always; }
+            .no-print { display: none; }
+        }
+    </style>
+</head>
+<body>
+<div class="page">
+
+    <!-- ═══════════════════ HEADER ═══════════════════ -->
+    {% include "components/header.html" %}
+
+    <!-- ═══════════════════ MEDICAL HISTORY ═══════════════════ -->
+    {% if patient.is_diabetic is not none or patient.has_hypertension is not none %}
+    <div class="medical-history">
+        <h2 class="section-title">Medical History</h2>
+        <div class="history-grid">
+            {% if patient.is_diabetic is not none %}
+            <div class="history-item">
+                <div class="history-label">Diabetes</div>
+                <div class="history-value">
+                    {% if patient.is_diabetic %}Yes{% else %}No{% endif %}
+                    {% if patient.diabetes_duration_years %}
+                        ({{ patient.diabetes_duration_years }} years)
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+            {% if patient.has_hypertension is not none %}
+            <div class="history-item">
+                <div class="history-label">Hypertension</div>
+                <div class="history-value">{% if patient.has_hypertension %}Yes{% else %}No{% endif %}</div>
+            </div>
+            {% endif %}
+            {% if patient.age %}
+            <div class="history-item">
+                <div class="history-label">Age</div>
+                <div class="history-value">{{ patient.age }} years</div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- ═══════════════════ EYE RESULTS ═══════════════════ -->
+    <div class="eye-results-container">
+        <!-- Left Eye -->
+        {% with eye_label="Left Eye", eye_side="left",
+                fundus_image_base64=left_fundus_base64,
+                gradcam_image_base64=left_gradcam_base64,
+                dr_grade=screening.dr_grade_left,
+                dr_confidence=screening.dr_confidence_left,
+                glaucoma_prob=screening.glaucoma_prob_left,
+                amd_prob=screening.amd_prob_left,
+                iqa_score=left_iqa_score,
+                iqa_passed=left_iqa_passed,
+                dr_grades_display={0: 'No DR', 1: 'Mild', 2: 'Moderate', 3: 'Severe', 4: 'Proliferative'},
+                fundus_label="Fundus Image",
+                gradcam_label="GradCAM Heatmap",
+                quality_label="Quality",
+                no_image_label="Image not available",
+                no_heatmap_label="Heatmap not available",
+                dr_label="Diabetic Retinopathy",
+                glaucoma_label="Glaucoma Suspect",
+                amd_label="AMD",
+                low_risk_label="Low Risk",
+                moderate_risk_label="Moderate Risk",
+                high_risk_label="High Risk",
+                na_label="N/A" %}
+            {% include "components/eye_result.html" %}
+        {% endwith %}
+
+        <!-- Right Eye -->
+        {% with eye_label="Right Eye", eye_side="right",
+                fundus_image_base64=right_fundus_base64,
+                gradcam_image_base64=right_gradcam_base64,
+                dr_grade=screening.dr_grade_right,
+                dr_confidence=screening.dr_confidence_right,
+                glaucoma_prob=screening.glaucoma_prob_right,
+                amd_prob=screening.amd_prob_right,
+                iqa_score=right_iqa_score,
+                iqa_passed=right_iqa_passed,
+                dr_grades_display={0: 'No DR', 1: 'Mild', 2: 'Moderate', 3: 'Severe', 4: 'Proliferative'},
+                fundus_label="Fundus Image",
+                gradcam_label="GradCAM Heatmap",
+                quality_label="Quality",
+                no_image_label="Image not available",
+                no_heatmap_label="Heatmap not available",
+                dr_label="Diabetic Retinopathy",
+                glaucoma_label="Glaucoma Suspect",
+                amd_label="AMD",
+                low_risk_label="Low Risk",
+                moderate_risk_label="Moderate Risk",
+                high_risk_label="High Risk",
+                na_label="N/A" %}
+            {% include "components/eye_result.html" %}
+        {% endwith %}
+    </div>
+
+    <!-- ═══════════════════ FINDINGS & REFERRAL ═══════════════════ -->
+    {% with findings_title="Key Findings",
+            condition_col="Condition",
+            severity_col="Severity",
+            description_col="Description",
+            no_findings_label="No significant findings detected.",
+            referral_title="Referral Recommendation",
+            emergency_label="EMERGENCY",
+            urgent_label="URGENT",
+            routine_label="ROUTINE",
+            referral_message=referral_message,
+            no_referral_message="No immediate referral required. Routine follow-up screening recommended in 12 months.",
+            reason_label="Reason" %}
+        {% include "components/findings.html" %}
+    {% endwith %}
+
+    <!-- ═══════════════════ FOOTER ═══════════════════ -->
+    {% with disclaimer_title="Disclaimer",
+            disclaimer_text="This report is generated by an AI-assisted screening system (NetraAI) and is intended for preliminary screening purposes only. It does not constitute a medical diagnosis. The results should be interpreted by a qualified ophthalmologist. The AI model predictions are probabilistic and may contain false positives or false negatives. Clinical correlation and comprehensive eye examination are recommended for all findings. This screening complies with ABDM (Ayushman Bharat Digital Mission) data standards.",
+            screening_id_label="Screening ID",
+            operator_label="Operator",
+            center_label="Screening Center",
+            generated_label="Generated",
+            powered_by_label="Powered by",
+            qr_label="Scan to verify report" %}
+        {% include "components/footer.html" %}
+    {% endwith %}
+
+</div>
+</body>
+</html>

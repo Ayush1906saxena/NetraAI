@@ -1,0 +1,56 @@
+<!-- Reusable header component for screening reports -->
+<div class="header">
+    <div class="header-logo">
+        {% if logo_base64 %}
+        <img src="data:image/png;base64,{{ logo_base64 }}" alt="NetraAI Logo" class="logo" />
+        {% else %}
+        <div class="logo-text">
+            <span class="logo-icon">&#x1F441;</span>
+            <span class="logo-name">NetraAI</span>
+        </div>
+        {% endif %}
+    </div>
+    <div class="header-info">
+        <h1 class="report-title">{{ title | default("Eye Screening Report") }}</h1>
+        <div class="header-meta">
+            <span class="meta-item">
+                <strong>{{ report_id_label | default("Report ID") }}:</strong> {{ report_id }}
+            </span>
+            <span class="meta-item">
+                <strong>{{ date_label | default("Date") }}:</strong> {{ screening_date }}
+            </span>
+        </div>
+    </div>
+    <div class="header-badge risk-{{ overall_risk | default('low') | lower }}">
+        {{ overall_risk | default("Low") | upper }}
+    </div>
+</div>
+
+<div class="patient-info-bar">
+    <div class="info-group">
+        <span class="info-label">{{ patient_name_label | default("Patient") }}:</span>
+        <span class="info-value">{{ patient.full_name }}</span>
+    </div>
+    {% if patient.age %}
+    <div class="info-group">
+        <span class="info-label">{{ age_label | default("Age") }}:</span>
+        <span class="info-value">{{ patient.age }} {{ years_label | default("yrs") }}</span>
+    </div>
+    {% endif %}
+    {% if patient.gender %}
+    <div class="info-group">
+        <span class="info-label">{{ gender_label | default("Gender") }}:</span>
+        <span class="info-value">{{ patient.gender }}</span>
+    </div>
+    {% endif %}
+    {% if patient.abha_id %}
+    <div class="info-group">
+        <span class="info-label">ABHA ID:</span>
+        <span class="info-value">{{ patient.abha_id }}</span>
+    </div>
+    {% endif %}
+    <div class="info-group">
+        <span class="info-label">{{ store_label | default("Center") }}:</span>
+        <span class="info-value">{{ store.name }}{% if store.city %}, {{ store.city }}{% endif %}</span>
+    </div>
+</div>

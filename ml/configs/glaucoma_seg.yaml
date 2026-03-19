@@ -1,0 +1,93 @@
+# Glaucoma Segmentation Training Configuration
+# Model: GlaucomaSegmentor (U-Net with EfficientNet-B3 encoder)
+# Task: Optic disc + cup segmentation for CDR computation
+
+model:
+  name: GlaucomaSegmentor
+  encoder_name: efficientnet-b3
+  encoder_weights: imagenet
+  in_channels: 3
+  num_classes: 2  # disc, cup
+  decoder_channels: [256, 128, 64, 32, 16]
+  dropout: 0.2
+
+data:
+  dataset: refuge
+  data_root: data/processed/glaucoma
+  img_size: 512
+  mask_size: 512
+  num_workers: 4
+  pin_memory: true
+  train_split: 0.8
+  val_split: 0.2
+
+training:
+  batch_size: 8
+  epochs: 80
+  lr: 1.0e-3
+  weight_decay: 0.01
+  device: mps
+  use_amp: true
+  seed: 42
+  grad_clip_norm: 1.0
+
+loss:
+  type: dice_focal
+  dice_weight: 1.0
+  focal_weight: 1.0
+  focal_alpha: 0.25
+  focal_gamma: 2.0
+  smooth: 1.0
+
+scheduler:
+  type: cosine_warm_restarts
+  warmup_epochs: 5
+  T_0: 15
+  T_mult: 2
+  min_lr: 1.0e-7
+
+early_stopping:
+  patience: 15
+  min_delta: 0.001
+  mode: max  # monitoring val Dice score
+
+augmentation:
+  train:
+    resize: 512
+    horizontal_flip: 0.5
+    vertical_flip: 0.5
+    random_rotate90: 0.5
+    shift_scale_rotate:
+      shift_limit: 0.05
+      scale_limit: 0.1
+      rotate_limit: 30
+      p: 0.5
+    elastic_transform:
+      alpha: 120
+      sigma: 6
+      p: 0.3
+    color_jitter:
+      brightness: 0.1
+      contrast: 0.1
+      saturation: 0.1
+      hue: 0.02
+      p: 0.3
+    clahe:
+      clip_limit: 2.0
+      p: 0.3
+  val:
+    resize: 512
+    normalize: imagenet
+
+logging:
+  wandb: true
+  wandb_project: netra-glaucoma
+  mlflow: true
+  mlflow_experiment: glaucoma-seg
+  mlflow_tracking_uri: mlruns
+  run_name: null
+
+output:
+  dir: outputs/glaucoma_seg
+  save_top_k: 3
+  save_last: true

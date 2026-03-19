@@ -1,0 +1,78 @@
+<!-- Reusable findings and referral component -->
+<!-- Expected variables: findings (list of dicts with condition, severity, description),
+     referral_required, referral_urgency, referral_reason -->
+
+<div class="findings-section">
+    <h2 class="section-title">{{ findings_title | default("Key Findings") }}</h2>
+
+    {% if findings and findings | length > 0 %}
+    <table class="findings-table">
+        <thead>
+            <tr>
+                <th>{{ condition_col | default("Condition") }}</th>
+                <th>{{ severity_col | default("Severity") }}</th>
+                <th>{{ description_col | default("Description") }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for finding in findings %}
+            <tr>
+                <td class="finding-condition">{{ finding.condition }}</td>
+                <td>
+                    {% set sev = finding.severity | lower %}
+                    {% if sev in ['none', 'normal', 'no dr', 'low'] %}
+                        <span class="traffic-light traffic-green">{{ finding.severity }}</span>
+                    {% elif sev in ['mild', 'moderate', 'medium'] %}
+                        <span class="traffic-light traffic-amber">{{ finding.severity }}</span>
+                    {% else %}
+                        <span class="traffic-light traffic-red">{{ finding.severity }}</span>
+                    {% endif %}
+                </td>
+                <td>{{ finding.description }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="no-findings">{{ no_findings_label | default("No significant findings detected.") }}</p>
+    {% endif %}
+</div>
+
+<!-- Referral Recommendation -->
+<div class="referral-section {% if referral_required %}referral-required{% else %}referral-not-required{% endif %}">
+    <h2 class="section-title">{{ referral_title | default("Referral Recommendation") }}</h2>
+
+    {% if referral_required %}
+    <div class="referral-card referral-urgency-{{ referral_urgency | default('routine') | lower }}">
+        <div class="referral-icon">&#x26A0;</div>
+        <div class="referral-content">
+            <div class="referral-status">
+                {% if referral_urgency == 'emergency' %}
+                    <span class="urgency-badge urgency-emergency">{{ emergency_label | default("EMERGENCY") }}</span>
+                {% elif referral_urgency == 'urgent' %}
+                    <span class="urgency-badge urgency-urgent">{{ urgent_label | default("URGENT") }}</span>
+                {% else %}
+                    <span class="urgency-badge urgency-routine">{{ routine_label | default("ROUTINE") }}</span>
+                {% endif %}
+            </div>
+            <p class="referral-message">
+                {{ referral_message | default("Please consult an ophthalmologist for further evaluation.") }}
+            </p>
+            {% if referral_reason %}
+            <p class="referral-reason">
+                <strong>{{ reason_label | default("Reason") }}:</strong> {{ referral_reason }}
+            </p>
+            {% endif %}
+        </div>
+    </div>
+    {% else %}
+    <div class="referral-card referral-clear">
+        <div class="referral-icon">&#x2705;</div>
+        <div class="referral-content">
+            <p class="referral-message">
+                {{ no_referral_message | default("No immediate referral required. Routine follow-up recommended in 12 months.") }}
+            </p>
+        </div>
+    </div>
+    {% endif %}
+</div>

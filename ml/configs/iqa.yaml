@@ -1,0 +1,82 @@
+# Image Quality Assessment (IQA) Training Configuration
+# Model: FundusIQA (MobileNetV3-Small backbone)
+# Multi-task: quality score + gradeability + guidance
+
+model:
+  name: FundusIQA
+  num_guidance_classes: 8
+  pretrained_backbone: true
+  dropout: 0.3
+  quality_threshold: 0.5
+  gradeable_threshold: 0.5
+
+data:
+  dataset: fundus_iqa
+  data_root: data/processed/iqa
+  img_size: 224
+  num_workers: 4
+  pin_memory: true
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+
+training:
+  batch_size: 32
+  epochs: 30
+  lr: 1.0e-3
+  weight_decay: 0.01
+  device: mps
+  use_amp: true
+  seed: 42
+  grad_clip_norm: 1.0
+
+  # Multi-task loss weights
+  quality_loss_weight: 1.0
+  gradeable_loss_weight: 1.0
+  guidance_loss_weight: 0.5
+
+scheduler:
+  type: warmup_cosine
+  warmup_epochs: 3
+  min_lr: 1.0e-7
+
+early_stopping:
+  patience: 8
+  min_delta: 0.001
+  mode: min  # monitoring total val loss
+
+augmentation:
+  train:
+    resize: 224
+    horizontal_flip: 0.5
+    color_jitter:
+      brightness: 0.2
+      contrast: 0.2
+      saturation: 0.2
+      hue: 0.05
+      p: 0.5
+    gaussian_blur:
+      blur_limit: [3, 5]
+      p: 0.2
+    # Intentionally degrade quality for robust training
+    quality_degradation:
+      brightness_shift: 0.3
+      blur_severity: 0.3
+      noise_severity: 0.3
+      p: 0.4
+  val:
+    resize: 224
+    normalize: imagenet
+
+logging:
+  wandb: true
+  wandb_project: netra-iqa
+  mlflow: true
+  mlflow_experiment: iqa
+  mlflow_tracking_uri: mlruns
+  run_name: null
+
+output:
+  dir: outputs/iqa
+  save_top_k: 3
+  save_last: true
