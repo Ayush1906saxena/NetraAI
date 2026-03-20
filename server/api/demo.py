@@ -5,6 +5,9 @@ Designed for quick demos and testing.
 Usage:
     curl -X POST http://localhost:8000/v1/demo/analyze -F "file=@fundus.png"
 
+    # With TTA (high-confidence mode):
+    curl -X POST "http://localhost:8000/v1/demo/analyze?mode=high_confidence" -F "file=@fundus.png"
+
 Batch usage:
     curl -X POST http://localhost:8000/v1/demo/analyze-batch \
          -F "files=@left.png" -F "files=@right.png"
@@ -12,9 +15,9 @@ Batch usage:
 
 import asyncio
 import logging
-from typing import Any
+from typing import Any, Optional
 
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile, status
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -34,14 +37,27 @@ MAX_BATCH_SIZE = 10  # Max files in a single batch request
 async def demo_analyze(
     request: Request,
     file: UploadFile = File(..., description="Fundus image (JPEG/PNG)"),
+    mode: Optional[str] = Query(
+        None,
+        description="Inference mode: 'fast' (default), 'tta' (test-time augmentation), "
+                    "'high_confidence' (TTA + ensemble + uncertainty).",
+    ),
 ) -> dict[str, Any]:
     """
-    Upload a single fundus image and get full DR analysis.
+    Upload a single fundus image and get full multi-model analysis.
 
     No authentication required — intended for demo/testing.
 
-    Returns DR grade, probabilities, confidence, GradCAM heatmap (base64),
-    and referral recommendation.
+    Returns:
+    - analysis.dr — grade, probabilities, confidence, calibrated_confidence
+    - analysis.iqa — quality_score, is_gradeable, guidance (if IQA model loaded)
+    - analysis.glaucoma — cdr, disc_area, cup_area, risk (if glaucoma model loaded)
+    - analysis.uncertainty — score, needs_review, method
+    - analysis.tta_used — boolean
+    - analysis.models_used — list of model names that ran
+    - analysis.inference_time_ms — total time
+    - meta.model_versions — dict of model names to checkpoint paths
+    - meta.ensemble_size — how many models were ensembled
     """
     # Validate content type
     content_type = file.content_type or ""
@@ -73,16 +89,28 @@ async def demo_analyze(
             detail="DR model not loaded. The server is still starting or the checkpoint is missing.",
         )
 
-    # Run quality check
+    # Resolve inference mode
+    use_tta = None
+    high_confidence_mode = False
+    if mode == "tta":
+        use_tta = True
+    elif mode == "high_confidence":
+        high_confidence_mode = True
+
+    # Run quality check (basic heuristic — always runs, separate from IQA model)
     try:
         quality = await inference_svc.check_quality(image_bytes)
     except Exception as e:
         logger.error("Quality check error: %s", e)
         quality = {"score": 0.5, "passed": True, "details": {"error": str(e)}}
 
-    # Run DR analysis
+    # Run full multi-model analysis
     try:
-        result = await inference_svc.analyze_fundus(image_bytes)
+        result = await inference_svc.analyze_fundus(
+            image_bytes,
+            use_tta=use_tta,
+            high_confidence_mode=high_confidence_mode,
+        )
     except Exception as e:
         logger.error("Inference error: %s", e, exc_info=True)
         raise HTTPException(
@@ -91,10 +119,14 @@ async def demo_analyze(
         )
 
     return {
-        "status": "success",
+        "status": result.get("status", "success"),
         "filename": file.filename,
         "quality": quality,
-        "analysis": result,
+        "analysis": result.get("analysis", {}),
+        "referral": result.get("referral", {}),
+        "gradcam": result.get("gradcam", {}),
+        "model_info": result.get("model_info", {}),
+        "meta": result.get("meta", {}),
     }
 
 
@@ -102,9 +134,13 @@ async def demo_analyze(
 async def demo_analyze_batch(
     request: Request,
     files: list[UploadFile] = File(..., description="Multiple fundus images (JPEG/PNG)"),
+    mode: Optional[str] = Query(
+        None,
+        description="Inference mode: 'fast' (default), 'tta', 'high_confidence'.",
+    ),
 ) -> dict[str, Any]:
     """
-    Upload multiple fundus images and get DR analysis for all of them.
+    Upload multiple fundus images and get multi-model analysis for all of them.
 
     No authentication required — intended for demo/testing.
     Processes all images concurrently using asyncio.gather.
@@ -130,6 +166,14 @@ async def demo_analyze_batch(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="DR model not loaded. The server is still starting or the checkpoint is missing.",
         )
+
+    # Resolve mode
+    use_tta = None
+    high_confidence_mode = False
+    if mode == "tta":
+        use_tta = True
+    elif mode == "high_confidence":
+        high_confidence_mode = True
 
     # Read all files first (validation pass)
     file_data: list[tuple[str, bytes, str]] = []
@@ -164,7 +208,11 @@ async def demo_analyze_batch(
             quality = {"score": 0.5, "passed": True, "details": {"error": str(e)}}
 
         try:
-            result = await inference_svc.analyze_fundus(image_bytes)
+            result = await inference_svc.analyze_fundus(
+                image_bytes,
+                use_tta=use_tta,
+                high_confidence_mode=high_confidence_mode,
+            )
         except Exception as e:
             logger.error("Inference error for %s: %s", filename, e, exc_info=True)
             return {
@@ -174,10 +222,14 @@ async def demo_analyze_batch(
             }
 
         return {
-            "status": "success",
+            "status": result.get("status", "success"),
             "filename": filename,
             "quality": quality,
-            "analysis": result,
+            "analysis": result.get("analysis", {}),
+            "referral": result.get("referral", {}),
+            "gradcam": result.get("gradcam", {}),
+            "model_info": result.get("model_info", {}),
+            "meta": result.get("meta", {}),
         }
 
     # Run all analyses concurrently

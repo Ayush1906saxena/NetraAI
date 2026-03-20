@@ -16,14 +16,18 @@ from server.middleware.rate_limit import RateLimitMiddleware
 from server.middleware.request_id import RequestIDMiddleware
 
 from server.api import health, auth, screenings, images, reports, patients, stores, webhooks
-from server.api import demo, report_demo
+from server.api import demo, report_demo, models as models_router
 from server.api import ws as ws_router
 
 logger = logging.getLogger(__name__)
 
-# Resolve checkpoint path relative to project root
+# Resolve checkpoint paths relative to project root
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DR_CHECKPOINT = PROJECT_ROOT / "checkpoints" / "dr_aptos" / "best.pth"
+IQA_CHECKPOINT = PROJECT_ROOT / "checkpoints" / "iqa_best.pth"
+GLAUCOMA_CHECKPOINT = PROJECT_ROOT / "checkpoints" / "glaucoma_best.pth"
+DR_ENSEMBLE_DIR = PROJECT_ROOT / "checkpoints" / "dr_aptos"
+CALIBRATION_CHECKPOINT = PROJECT_ROOT / "checkpoints" / "calibration.pth"
 
 
 def _pick_device() -> str:
@@ -66,8 +70,9 @@ async def lifespan(app: FastAPI):
 
     inference_svc = InferenceService()
 
+    device = _pick_device()
+
     if DR_CHECKPOINT.exists():
-        device = _pick_device()
         try:
             await inference_svc.load_model(str(DR_CHECKPOINT), device=device)
             logger.info("DR model loaded on %s from %s", device, DR_CHECKPOINT)
@@ -79,6 +84,30 @@ async def lifespan(app: FastAPI):
             "DR checkpoint not found at %s — server will start without inference.",
             DR_CHECKPOINT,
         )
+
+    # ── Load IQA model (optional — graceful if missing) ──────────────
+    try:
+        await inference_svc.load_iqa_model(str(IQA_CHECKPOINT))
+    except Exception as e:
+        logger.warning("IQA model not loaded (non-fatal): %s", e)
+
+    # ── Load Glaucoma model (optional — graceful if missing) ─────────
+    try:
+        await inference_svc.load_glaucoma_model(str(GLAUCOMA_CHECKPOINT))
+    except Exception as e:
+        logger.warning("Glaucoma model not loaded (non-fatal): %s", e)
+
+    # ── Load ensemble models (optional — graceful if missing) ────────
+    try:
+        await inference_svc.load_ensemble_models(str(DR_ENSEMBLE_DIR))
+    except Exception as e:
+        logger.warning("Ensemble models not loaded (non-fatal): %s", e)
+
+    # ── Load temperature scaling calibration (optional) ──────────────
+    try:
+        await inference_svc.load_temperature_scaling(str(CALIBRATION_CHECKPOINT))
+    except Exception as e:
+        logger.warning("Temperature scaling not loaded (non-fatal): %s", e)
 
     app.state.inference_service = inference_svc
 
@@ -166,6 +195,7 @@ def create_app() -> FastAPI:
     app.include_router(webhooks.router, prefix="/v1/webhooks", tags=["webhooks"])
     app.include_router(demo.router, prefix="/v1/demo", tags=["demo"])
     app.include_router(report_demo.router, prefix="/v1/demo", tags=["demo-report"])
+    app.include_router(models_router.router, prefix="/v1/models", tags=["models"])
 
     # ── WebSocket routes ─────────────────────────────────────────────
     app.include_router(ws_router.router, prefix="/v1/ws", tags=["websocket"])

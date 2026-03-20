@@ -48,6 +48,15 @@ class Settings(BaseSettings):
     MODEL_DEVICE: str = "cpu"
     MODEL_BATCH_SIZE: int = 4
 
+    # ── Enhanced Inference Settings ───────────────────────────────────
+    ENSEMBLE_MODELS: int = 3                     # Max DR ensemble snapshots
+    TTA_ENABLED: bool = False                    # TTA off by default (speed)
+    TTA_N_AUGMENTS: int = 5                      # TTA augmentation folds
+    MC_DROPOUT_PASSES: int = 5                   # Monte Carlo Dropout passes
+    TEMPERATURE_SCALING_DEFAULT: float = 1.5     # Default temperature for calibration
+    IQA_QUALITY_THRESHOLD: float = 0.4           # Minimum IQA quality to proceed
+    UNCERTAINTY_REVIEW_THRESHOLD: float = 0.15   # Std above this → needs review
+
     # ── JWT / Auth ───────────────────────────────────────────────────────
     JWT_SECRET_KEY: str = "change-me-in-production-super-secret-key"
     JWT_ALGORITHM: str = "HS256"
