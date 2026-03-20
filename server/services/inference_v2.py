@@ -3,10 +3,17 @@ Simplified inference service using the trained EfficientNet-B3 DR model.
 
 Loads the actual trained checkpoint from checkpoints/dr_aptos/best.pth
 and provides analyze_fundus() and check_quality() methods.
+
+Enhanced with:
+- Async wrappers that run inference in a thread pool
+- Redis caching for prediction results (keyed by image SHA-256)
+- Inference request counting and latency metrics
+- Model warm-up on load (dummy inference to pre-compile)
 """
 
 import asyncio
 import base64
+import hashlib
 import io
 import logging
 import time
@@ -75,6 +82,18 @@ DR_GRADE_DESCRIPTIONS = [
     "Proliferative diabetic retinopathy — neovascularization or vitreous/preretinal hemorrhage.",
 ]
 REFERRAL_THRESHOLD = 2  # grade >= 2 is referable DR
+
+
+# ── Inference metrics (simple in-memory dict) ─────────────────────────────
+inference_metrics: dict[str, Any] = {
+    "total_requests": 0,
+    "total_errors": 0,
+    "total_cache_hits": 0,
+    "total_cache_misses": 0,
+    "total_latency_ms": 0.0,
+    "avg_latency_ms": 0.0,
+    "quality_checks": 0,
+}
 
 
 class DRGrader(nn.Module):
@@ -164,6 +183,25 @@ class InferenceService:
 
             self.is_loaded = True
             logger.info("DR model loaded successfully. Ready for inference.")
+
+            # Warm-up: run a dummy inference to pre-compile model graph
+            await self._warmup()
+
+    async def _warmup(self) -> None:
+        """Run a dummy inference to pre-compile the model (avoids cold-start latency)."""
+        if not self.is_loaded or self.model is None:
+            return
+
+        def _run_dummy():
+            dummy = torch.randn(1, 3, 224, 224).to(self.device)
+            with torch.no_grad():
+                _ = self.model(dummy)
+
+        try:
+            await asyncio.to_thread(_run_dummy)
+            logger.info("Model warm-up complete (dummy inference executed).")
+        except Exception as exc:
+            logger.warning("Model warm-up failed (non-fatal): %s", exc)
 
     async def unload_model(self) -> None:
         """Release model from memory."""
@@ -271,9 +309,16 @@ class InferenceService:
             logger.info(
                 "DR inference completed in %.1fms on %s", latency_ms, self.device
             )
-            return probs
+            return probs, latency_ms
 
-        probs = await asyncio.to_thread(_infer)
+        probs, latency_ms = await asyncio.to_thread(_infer)
+
+        # Update metrics
+        inference_metrics["total_requests"] += 1
+        inference_metrics["total_latency_ms"] += latency_ms
+        inference_metrics["avg_latency_ms"] = (
+            inference_metrics["total_latency_ms"] / inference_metrics["total_requests"]
+        )
 
         grade = int(np.argmax(probs))
         confidence = float(probs[grade])
@@ -419,7 +464,83 @@ class InferenceService:
             }
 
         try:
+            inference_metrics["quality_checks"] += 1
             return await asyncio.to_thread(_check)
         except Exception as e:
             logger.error("Quality check failed: %s", e)
             return {"score": 0.0, "passed": False, "details": {"error": str(e)}}
+
+
+# ── Async wrappers with caching ───────────────────────────────────────────
+
+async def analyze_fundus_async(
+    image_bytes: bytes,
+    service: InferenceService | None = None,
+) -> dict[str, Any]:
+    """
+    Async-first DR analysis with Redis caching.
+
+    1. Computes SHA-256 hash of image_bytes
+    2. Checks Redis cache first
+    3. If cache miss, runs inference in thread pool via InferenceService
+    4. Caches the result (minus gradcam to save memory)
+    5. Returns result
+    """
+    from server.services.cache import cache
+
+    if service is None:
+        raise RuntimeError("InferenceService must be provided.")
+
+    # Compute image hash
+    image_hash = hashlib.sha256(image_bytes).hexdigest()
+
+    # Check cache
+    cached = await cache.get_prediction_cache(image_hash)
+    if cached is not None:
+        inference_metrics["total_cache_hits"] += 1
+        logger.info("Cache HIT for image hash %s...", image_hash[:12])
+        return cached
+
+    inference_metrics["total_cache_misses"] += 1
+
+    # Run inference (already uses thread pool internally)
+    loop = asyncio.get_event_loop()
+    result = await service.analyze_fundus(image_bytes)
+
+    # Cache the result without gradcam (to save memory)
+    cache_result = {k: v for k, v in result.items() if k != "gradcam"}
+    await cache.set_prediction_cache(image_hash, cache_result, ttl=3600)
+
+    return result
+
+
+async def check_quality_async(
+    image_bytes: bytes,
+    service: InferenceService | None = None,
+) -> dict[str, Any]:
+    """
+    Async quality check with Redis caching.
+
+    Caches quality results by image hash so repeated uploads of the
+    same image skip reprocessing.
+    """
+    from server.services.cache import cache
+
+    if service is None:
+        raise RuntimeError("InferenceService must be provided.")
+
+    image_hash = hashlib.sha256(image_bytes).hexdigest()
+
+    # Check cache (use a quality-specific prefix)
+    cached = await cache.get_prediction_cache(f"quality:{image_hash}")
+    if cached is not None:
+        logger.info("Quality cache HIT for image hash %s...", image_hash[:12])
+        return cached
+
+    # Run quality check (already uses thread pool internally)
+    result = await service.check_quality(image_bytes)
+
+    # Cache it
+    await cache.set_prediction_cache(f"quality:{image_hash}", result, ttl=3600)
+
+    return result

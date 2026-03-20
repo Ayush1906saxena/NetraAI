@@ -1,42 +1,13 @@
 """Dependency injection functions for FastAPI endpoints."""
 
-from typing import AsyncGenerator
-
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from server.config import settings
-
-# ── Async database engine & session factory ─────────────────────────────
-engine = create_async_engine(
-    settings.DATABASE_URL,
-    pool_size=settings.DATABASE_POOL_SIZE,
-    max_overflow=settings.DATABASE_MAX_OVERFLOW,
-    echo=settings.DATABASE_ECHO,
-)
-
-async_session_factory = async_sessionmaker(
-    bind=engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-)
+from server.database import get_db  # noqa: F401 — re-export for existing imports
 
 bearer_scheme = HTTPBearer(auto_error=False)
-
-
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """Yield an async database session, auto-closing after use."""
-    async with async_session_factory() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
-        finally:
-            await session.close()
 
 
 def get_models(request: Request):

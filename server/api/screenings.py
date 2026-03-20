@@ -1,6 +1,7 @@
 """Screening endpoints: create, upload fundus images, trigger analysis, get results.
 
-Uses SQLAlchemy async sessions and the new InferenceService (EfficientNet-B3).
+Uses the screening_service layer for CRUD operations and
+InferenceService (EfficientNet-B3) for AI analysis.
 """
 
 import logging
@@ -8,7 +9,6 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
-from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.config import settings
@@ -24,6 +24,7 @@ from server.schemas.screening import (
     UploadResponse,
 )
 from server.services.inference_v2 import InferenceService
+from server.services import screening_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -85,37 +86,24 @@ def _compute_referral(screening: Screening) -> dict:
     }
 
 
-async def _get_screening_or_404(db: AsyncSession, screening_id: uuid.UUID) -> Screening:
-    """Fetch a screening by ID or raise 404."""
-    result = await db.execute(select(Screening).where(Screening.id == screening_id))
-    screening = result.scalar_one_or_none()
-    if not screening:
-        raise HTTPException(status_code=404, detail="Screening not found")
-    return screening
-
-
 # ── Endpoints ────────────────────────────────────────────────────────────
 
 @router.post("/", response_model=ScreeningResponse, status_code=status.HTTP_201_CREATED)
-async def create_screening(
+async def create_screening_endpoint(
     body: ScreeningCreate,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new screening session."""
-    screening = Screening(
-        id=uuid.uuid4(),
+    new_screening = await screening_service.create_screening(
+        db=db,
         patient_id=body.patient_id,
         store_id=body.store_id,
         operator_id=uuid.UUID(current_user["user_id"]),
-        status="created",
         notes=body.notes,
     )
-    db.add(screening)
-    await db.flush()
-    await db.refresh(screening)
-    logger.info("Screening created: %s by operator %s", screening.id, current_user["user_id"])
-    return screening
+    logger.info("Screening created: %s by operator %s", new_screening.id, current_user["user_id"])
+    return new_screening
 
 
 @router.post("/{screening_id}/upload/{eye}", response_model=UploadResponse)
@@ -131,7 +119,9 @@ async def upload_fundus_image(
     if eye not in ("left", "right"):
         raise HTTPException(status_code=400, detail="Eye must be 'left' or 'right'")
 
-    screening = await _get_screening_or_404(db, screening_id)
+    screening = await screening_service.get_screening(db, screening_id)
+    if screening is None:
+        raise HTTPException(status_code=404, detail="Screening not found")
 
     # Read file bytes
     image_bytes = await file.read()
@@ -146,16 +136,14 @@ async def upload_fundus_image(
     # Try to upload to S3/MinIO (graceful failure for dev without MinIO)
     s3_key = f"screenings/{screening_id}/{eye}/{file.filename}"
     try:
-        from server.services.storage import upload_image
-        await upload_image(
+        from server.services.storage import upload_fundus_image as upload_to_minio
+        s3_key = await upload_to_minio(
+            screening_id=str(screening_id),
+            eye=eye,
             image_bytes=image_bytes,
-            bucket=settings.S3_BUCKET_IMAGES,
-            key=s3_key,
-            content_type=file.content_type or "image/jpeg",
         )
     except Exception as e:
         logger.warning("S3 upload failed (continuing without storage): %s", e)
-        # In dev mode without MinIO, we still create the DB record
 
     # Create image record
     image = Image(
@@ -175,7 +163,7 @@ async def upload_fundus_image(
     db.add(image)
 
     # Update screening status
-    screening.status = "images_uploaded"
+    await screening_service.update_screening_status(db, screening_id, "images_uploaded")
     await db.flush()
     await db.refresh(image)
 
@@ -205,7 +193,9 @@ async def trigger_analysis(
     if body is None:
         body = AnalysisRequest()
 
-    screening = await _get_screening_or_404(db, screening_id)
+    screening = await screening_service.get_screening(db, screening_id)
+    if screening is None:
+        raise HTTPException(status_code=404, detail="Screening not found")
 
     if screening.status not in ("images_uploaded", "created"):
         raise HTTPException(
@@ -214,6 +204,9 @@ async def trigger_analysis(
         )
 
     # Get images for this screening
+    from sqlalchemy import select
+    from server.models.image import Image
+
     img_result = await db.execute(
         select(Image).where(
             Image.screening_id == screening_id,
@@ -224,16 +217,15 @@ async def trigger_analysis(
     if not images:
         raise HTTPException(status_code=400, detail="No quality-approved images found")
 
-    screening.status = "analyzing"
-    await db.flush()
+    await screening_service.update_screening_status(db, screening_id, "analyzing")
 
     try:
         for img in images:
             # Try to get image bytes from S3
             img_bytes = None
             try:
-                from server.services.storage import download_image
-                img_bytes = await download_image(bucket=img.s3_bucket, key=img.s3_key)
+                from server.services.storage import download_fundus_image
+                img_bytes = await download_fundus_image(s3_key=img.s3_key)
             except Exception as e:
                 logger.warning("Could not download image from S3: %s", e)
 
@@ -254,15 +246,24 @@ async def trigger_analysis(
 
         # Compute referral
         referral = _compute_referral(screening)
-        screening.referral_required = referral["referral_required"]
-        screening.referral_urgency = referral["referral_urgency"]
-        screening.referral_reason = referral["referral_reason"]
-        screening.overall_risk = referral["overall_risk"]
-        screening.raw_results = {"analysis_version": "v2", "model": "efficientnet_b3"}
-        screening.status = "completed"
-        screening.completed_at = datetime.now(timezone.utc)
 
-        await db.flush()
+        # Save results via service
+        await screening_service.save_analysis_results(
+            db=db,
+            screening_id=screening_id,
+            results={
+                "referral_required": referral["referral_required"],
+                "referral_urgency": referral["referral_urgency"],
+                "referral_reason": referral["referral_reason"],
+                "overall_risk": referral["overall_risk"],
+                "dr_grade_left": screening.dr_grade_left,
+                "dr_grade_right": screening.dr_grade_right,
+                "dr_confidence_left": screening.dr_confidence_left,
+                "dr_confidence_right": screening.dr_confidence_right,
+                "raw_results": {"analysis_version": "v2", "model": "efficientnet_b3"},
+            },
+        )
+
         await db.refresh(screening)
 
         logger.info("Screening %s analysis completed. Risk: %s", screening_id, screening.overall_risk)
@@ -275,8 +276,7 @@ async def trigger_analysis(
 
     except Exception as e:
         logger.error("Analysis failed for screening %s: %s", screening_id, e, exc_info=True)
-        screening.status = "failed"
-        await db.flush()
+        await screening_service.update_screening_status(db, screening_id, "failed")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Analysis failed: {str(e)}",
@@ -284,18 +284,20 @@ async def trigger_analysis(
 
 
 @router.get("/{screening_id}", response_model=ScreeningResponse)
-async def get_screening(
+async def get_screening_endpoint(
     screening_id: uuid.UUID,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Get screening details and results."""
-    screening = await _get_screening_or_404(db, screening_id)
+    screening = await screening_service.get_screening(db, screening_id)
+    if screening is None:
+        raise HTTPException(status_code=404, detail="Screening not found")
     return screening
 
 
 @router.get("/", response_model=ScreeningListResponse)
-async def list_screenings(
+async def list_screenings_endpoint(
     page: int = 1,
     page_size: int = 20,
     status_filter: str | None = None,
@@ -304,29 +306,24 @@ async def list_screenings(
     db: AsyncSession = Depends(get_db),
 ):
     """List screenings with filtering and pagination."""
-    query = select(Screening)
-
-    if status_filter:
-        query = query.where(Screening.status == status_filter)
-    if store_id:
-        query = query.where(Screening.store_id == store_id)
-
     # Non-admin users can only see their store's screenings
+    effective_store_id = store_id
     if current_user["role"] not in ("admin", "doctor"):
         if current_user.get("store_id"):
-            query = query.where(Screening.store_id == uuid.UUID(current_user["store_id"]))
+            effective_store_id = uuid.UUID(current_user["store_id"])
 
-    query = query.order_by(Screening.created_at.desc())
-
-    # Count
-    count_result = await db.execute(
-        select(func.count()).select_from(query.subquery())
+    skip = (page - 1) * page_size
+    items = await screening_service.list_screenings(
+        db=db,
+        skip=skip,
+        limit=page_size,
+        store_id=effective_store_id,
+        status=status_filter,
     )
-    total = count_result.scalar() or 0
-
-    # Paginate
-    query = query.offset((page - 1) * page_size).limit(page_size)
-    result = await db.execute(query)
-    items = result.scalars().all()
+    total = await screening_service.count_screenings(
+        db=db,
+        store_id=effective_store_id,
+        status=status_filter,
+    )
 
     return ScreeningListResponse(items=items, total=total, page=page, page_size=page_size)

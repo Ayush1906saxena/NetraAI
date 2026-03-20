@@ -13,9 +13,11 @@ from server.config import settings
 from server.middleware.error_handler import ErrorHandlerMiddleware
 from server.middleware.logging import RequestLoggingMiddleware
 from server.middleware.rate_limit import RateLimitMiddleware
+from server.middleware.request_id import RequestIDMiddleware
 
 from server.api import health, auth, screenings, images, reports, patients, stores, webhooks
 from server.api import demo, report_demo
+from server.api import ws as ws_router
 
 logger = logging.getLogger(__name__)
 
@@ -38,10 +40,28 @@ def _pick_device() -> str:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Load ML models on startup, release on shutdown."""
+    """Initialize database, Redis cache, and ML models on startup; clean up on shutdown."""
     logger.info("Starting NetraAI server ...")
 
-    # ── Load EfficientNet-B3 DR model (the one we actually trained) ────
+    # ── Initialize database (create tables) ──────────────────────────
+    from server.database import init_db, close_db
+
+    try:
+        await init_db()
+        logger.info("Database initialized.")
+    except Exception as e:
+        logger.error("Database initialization failed: %s", e, exc_info=True)
+        logger.warning("Server will start WITHOUT database connectivity.")
+
+    # ── Initialize Redis cache ───────────────────────────────────────
+    from server.services.cache import cache
+
+    try:
+        await cache.connect()
+    except Exception as e:
+        logger.warning("Redis cache initialization failed (non-fatal): %s", e)
+
+    # ── Load EfficientNet-B3 DR model (the one we actually trained) ──
     from server.services.inference_v2 import InferenceService
 
     inference_svc = InferenceService()
@@ -62,7 +82,7 @@ async def lifespan(app: FastAPI):
 
     app.state.inference_service = inference_svc
 
-    # ── Optionally try to load the old ONNX ModelRegistry (graceful) ───
+    # ── Optionally try to load the old ONNX ModelRegistry (graceful) ─
     try:
         from server.services.inference import ModelRegistry
 
@@ -84,15 +104,30 @@ async def lifespan(app: FastAPI):
     logger.info("NetraAI server ready.")
     yield
 
-    # ── Shutdown ───────────────────────────────────────────────────────
-    logger.info("Shutting down — releasing ML models...")
+    # ── Shutdown ─────────────────────────────────────────────────────
+    logger.info("Shutting down — releasing resources...")
+
+    # Close Redis cache
+    try:
+        await cache.close()
+    except Exception:
+        pass
+
+    # Release ML models
     await inference_svc.unload_model()
     if getattr(app.state, "models", None) is not None:
         try:
             await app.state.models.unload_models()
         except Exception:
             pass
-    logger.info("Models released. Goodbye.")
+
+    # Close database pool
+    try:
+        await close_db()
+    except Exception:
+        pass
+
+    logger.info("All resources released. Goodbye.")
 
 
 def create_app() -> FastAPI:
@@ -114,10 +149,11 @@ def create_app() -> FastAPI:
 
     # ── Custom middleware ─────────────────────────────────────────────
     # Note: middleware executes in reverse registration order (last added = outermost).
-    # ErrorHandler is outermost so it catches everything; Logging is next for access logs.
+    # RequestID is outermost so all other middleware can use request_id.
     app.add_middleware(RequestLoggingMiddleware)
     app.add_middleware(ErrorHandlerMiddleware)
     app.add_middleware(RateLimitMiddleware)
+    app.add_middleware(RequestIDMiddleware)
 
     # ── Routers ──────────────────────────────────────────────────────
     app.include_router(health.router, tags=["health"])
@@ -130,6 +166,9 @@ def create_app() -> FastAPI:
     app.include_router(webhooks.router, prefix="/v1/webhooks", tags=["webhooks"])
     app.include_router(demo.router, prefix="/v1/demo", tags=["demo"])
     app.include_router(report_demo.router, prefix="/v1/demo", tags=["demo-report"])
+
+    # ── WebSocket routes ─────────────────────────────────────────────
+    app.include_router(ws_router.router, prefix="/v1/ws", tags=["websocket"])
 
     return app
 
