@@ -1,0 +1,16 @@
+data/
+checkpoints/
+.venv/
+node_modules/
+__pycache__/
+.git/
+.github/
+*.pyc
+*.pyo
+.env
+.env.*
+*.egg-info/
+dist/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
