@@ -38,10 +38,26 @@ export interface Screening {
 export async function analyzeImage(file: File): Promise<AnalysisResult> {
   const form = new FormData();
   form.append("file", file);
-  const { data } = await api.post<AnalysisResult>("/demo/analyze", form, {
+  const { data } = await api.post("/demo/analyze", form, {
     headers: { "Content-Type": "multipart/form-data" },
   });
-  return data;
+
+  // Map the nested API response to our flat AnalysisResult shape
+  const dr = data.analysis?.dr || data.dr || data;
+  const referral = data.analysis?.referral || data.referral || {};
+  const gradcam = data.analysis?.gradcam || data.gradcam || {};
+
+  return {
+    grade: dr.grade ?? 0,
+    grade_label: dr.grade_name || dr.grade_label || "Unknown",
+    confidence: dr.confidence ?? 0,
+    probabilities: dr.probabilities || {},
+    gradcam_base64: gradcam.overlay_png_base64 || dr.gradcam_base64 || "",
+    referral: {
+      urgency: referral.urgency || "none",
+      recommendation: referral.recommendation || "",
+    },
+  };
 }
 
 export async function fetchScreenings(): Promise<Screening[]> {
