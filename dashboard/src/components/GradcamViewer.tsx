@@ -6,56 +6,65 @@ interface Props {
 }
 
 export default function GradcamViewer({ originalSrc, gradcamBase64 }: Props) {
-  const [showHeatmap, setShowHeatmap] = useState(true);
+  const [overlay, setOverlay] = useState(0.6);
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-3">
-        <h4 className="text-sm font-semibold text-gray-600">Retinal Image Analysis</h4>
-        <button
-          onClick={() => setShowHeatmap(!showHeatmap)}
-          className={`text-xs px-3 py-1.5 rounded-full font-medium transition-all ${
-            showHeatmap
-              ? "bg-[#1B4F72] text-white"
-              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-          }`}
-        >
-          {showHeatmap ? "Showing AI Heatmap" : "Show AI Heatmap"}
-        </button>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="relative group">
-          <span className="absolute top-2 left-2 bg-black/50 text-white text-[10px] px-2 py-0.5 rounded-full z-10">
-            Original
-          </span>
-          <img
-            src={originalSrc}
-            alt="Original fundus"
-            className="w-full rounded-xl shadow-md border border-gray-100 transition-transform group-hover:scale-[1.01]"
+    <div className="card-elevated overflow-hidden fade-in-up stagger-2">
+      {/* Header */}
+      <div className="px-6 pt-6 pb-4 flex items-center justify-between">
+        <div>
+          <h4 className="text-base font-semibold text-gray-900">AI Attention Map</h4>
+          <p className="text-xs text-gray-400 mt-0.5">GradCAM visualization of model focus regions</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-gray-400 font-medium">Original</span>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value={overlay}
+            onChange={(e) => setOverlay(parseFloat(e.target.value))}
+            className="w-24 h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-indigo-500"
           />
-        </div>
-        <div className="relative group">
-          <span className="absolute top-2 left-2 bg-black/50 text-white text-[10px] px-2 py-0.5 rounded-full z-10">
-            AI Attention Map
-          </span>
-          {showHeatmap && gradcamBase64 ? (
-            <img
-              src={`data:image/png;base64,${gradcamBase64}`}
-              alt="GradCAM heatmap"
-              className="w-full rounded-xl shadow-md border border-gray-100 transition-transform group-hover:scale-[1.01]"
-            />
-          ) : (
-            <img
-              src={originalSrc}
-              alt="Original fundus"
-              className="w-full rounded-xl shadow-md border border-gray-100 opacity-60"
-            />
-          )}
+          <span className="text-xs text-gray-400 font-medium">Heatmap</span>
         </div>
       </div>
-      <p className="text-[11px] text-gray-400 mt-2 text-center">
-        Red/yellow areas show where the AI detected pathological features. Blue areas are normal.
-      </p>
+
+      {/* Image with overlay */}
+      <div className="relative mx-6 mb-4 rounded-xl overflow-hidden bg-gray-900 aspect-square max-w-md">
+        {/* Original image */}
+        <img
+          src={originalSrc}
+          alt="Original fundus"
+          className="absolute inset-0 w-full h-full object-cover"
+        />
+        {/* GradCAM overlay */}
+        {gradcamBase64 && (
+          <img
+            src={`data:image/png;base64,${gradcamBase64}`}
+            alt="GradCAM heatmap"
+            className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300"
+            style={{ opacity: overlay }}
+          />
+        )}
+      </div>
+
+      {/* Color legend */}
+      <div className="px-6 pb-5 flex items-center justify-center gap-6">
+        <div className="flex items-center gap-2">
+          <div className="w-4 h-2.5 rounded-full bg-gradient-to-r from-blue-500 to-cyan-400" />
+          <span className="text-xs text-gray-500">Normal</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-4 h-2.5 rounded-full bg-gradient-to-r from-green-400 to-yellow-400" />
+          <span className="text-xs text-gray-500">Low attention</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-4 h-2.5 rounded-full bg-gradient-to-r from-orange-400 to-red-500" />
+          <span className="text-xs text-gray-500">High attention</span>
+        </div>
+      </div>
     </div>
   );
 }

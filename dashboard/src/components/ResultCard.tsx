@@ -1,38 +1,77 @@
+import { useEffect, useState } from "react";
+
 interface Props {
   grade: number;
   gradeLabel: string;
   confidence: number;
 }
 
-const GRADE_COLORS: Record<number, { bg: string; text: string; dot: string }> = {
-  0: { bg: "bg-green-50", text: "text-[#28a745]", dot: "bg-[#28a745]" },
-  1: { bg: "bg-green-50", text: "text-[#28a745]", dot: "bg-[#28a745]" },
-  2: { bg: "bg-amber-50", text: "text-[#ffc107]", dot: "bg-[#ffc107]" },
-  3: { bg: "bg-red-50", text: "text-[#dc3545]", dot: "bg-[#dc3545]" },
-  4: { bg: "bg-red-50", text: "text-[#dc3545]", dot: "bg-[#dc3545]" },
+const GRADE_GRADIENTS: Record<number, { gradient: string; ring: string; text: string; label: string }> = {
+  0: { gradient: "from-emerald-400 to-green-500", ring: "#10b981", text: "text-emerald-700", label: "Healthy" },
+  1: { gradient: "from-lime-400 to-emerald-500", ring: "#22c55e", text: "text-green-700", label: "Mild" },
+  2: { gradient: "from-amber-400 to-orange-500", ring: "#f59e0b", text: "text-amber-700", label: "Moderate" },
+  3: { gradient: "from-orange-400 to-red-500", ring: "#ef4444", text: "text-red-700", label: "Severe" },
+  4: { gradient: "from-red-500 to-red-700", ring: "#dc2626", text: "text-red-800", label: "Proliferative" },
 };
 
 export default function ResultCard({ grade, gradeLabel, confidence }: Props) {
-  const colors = GRADE_COLORS[grade] ?? GRADE_COLORS[0];
-  const pct = (confidence * 100).toFixed(1);
+  const colors = GRADE_GRADIENTS[grade] ?? GRADE_GRADIENTS[0];
+  const pct = confidence * 100;
+  const [animatedPct, setAnimatedPct] = useState(0);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setAnimatedPct(pct), 100);
+    return () => clearTimeout(timer);
+  }, [pct]);
+
+  // SVG circle gauge
+  const radius = 54;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (animatedPct / 100) * circumference;
 
   return (
-    <div className={`rounded-xl p-6 ${colors.bg} border`}>
-      <div className="flex items-center gap-3 mb-3">
-        <span className={`w-4 h-4 rounded-full ${colors.dot}`} />
-        <h3 className={`text-2xl font-bold ${colors.text}`}>{gradeLabel}</h3>
-      </div>
-      <p className="text-gray-600 text-sm">DR Grade {grade}</p>
-      <div className="mt-4">
-        <div className="flex justify-between text-sm mb-1">
-          <span className="text-gray-500">Confidence</span>
-          <span className="font-semibold">{pct}%</span>
+    <div className="card-elevated p-6 fade-in-up">
+      <div className="flex items-center gap-6">
+        {/* Circular confidence gauge */}
+        <div className="relative flex-shrink-0">
+          <svg width="132" height="132" viewBox="0 0 132 132" className="transform -rotate-90">
+            {/* Background ring */}
+            <circle
+              cx="66"
+              cy="66"
+              r={radius}
+              fill="none"
+              stroke="#f1f5f9"
+              strokeWidth="10"
+            />
+            {/* Animated progress ring */}
+            <circle
+              cx="66"
+              cy="66"
+              r={radius}
+              fill="none"
+              stroke={colors.ring}
+              strokeWidth="10"
+              strokeLinecap="round"
+              strokeDasharray={circumference}
+              strokeDashoffset={strokeDashoffset}
+              style={{ transition: "stroke-dashoffset 1.2s cubic-bezier(0.4, 0, 0.2, 1)" }}
+            />
+          </svg>
+          {/* Center text */}
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <span className="text-2xl font-bold text-gray-900">{pct.toFixed(1)}%</span>
+            <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">Confidence</span>
+          </div>
         </div>
-        <div className="w-full bg-gray-200 rounded-full h-2.5">
-          <div
-            className={`h-2.5 rounded-full ${colors.dot}`}
-            style={{ width: `${pct}%` }}
-          />
+
+        {/* Grade info */}
+        <div className="flex-1 min-w-0">
+          <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gradient-to-r ${colors.gradient} text-white text-xs font-semibold mb-2`}>
+            Grade {grade}
+          </div>
+          <h3 className="text-xl font-bold text-gray-900 leading-tight">{gradeLabel}</h3>
+          <p className="text-sm text-gray-400 mt-1">AI classification result</p>
         </div>
       </div>
     </div>

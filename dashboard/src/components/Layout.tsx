@@ -1,4 +1,5 @@
 import { Link, Outlet, useLocation } from "react-router-dom";
+import { useEffect, useState } from "react";
 
 const NAV_ITEMS = [
   { to: "/", label: "Screening", icon: "M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" },
@@ -8,38 +9,54 @@ const NAV_ITEMS = [
 
 export default function Layout() {
   const { pathname } = useLocation();
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 10);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   return (
     <div className="min-h-screen flex flex-col">
-      {/* Navbar */}
-      <header className="bg-gradient-to-r from-[#1B4F72] to-[#2E86C1] text-white shadow-lg">
+      {/* Frosted glass navbar */}
+      <header
+        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
+          scrolled
+            ? "glass-solid shadow-[0_1px_3px_rgba(0,0,0,0.08),0_4px_12px_rgba(0,0,0,0.04)] border-b border-gray-200/50"
+            : "glass border-b border-transparent"
+        }`}
+      >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
           <Link to="/" className="flex items-center gap-3 group">
-            {/* Eye Logo */}
+            {/* Gradient eye logo */}
             <div className="relative">
-              <svg className="w-9 h-9" viewBox="0 0 36 36" fill="none">
-                <ellipse cx="18" cy="18" rx="16" ry="11" stroke="white" strokeWidth="1.5" opacity="0.9"/>
-                <circle cx="18" cy="18" r="7" stroke="white" strokeWidth="1.5"/>
-                <circle cx="18" cy="18" r="3.5" fill="white"/>
-                <circle cx="18" cy="18" r="1.5" fill="#1B4F72"/>
-                <circle cx="19.5" cy="16.5" r="1" fill="#1B4F72" opacity="0.3"/>
-              </svg>
+              <div className="w-9 h-9 rounded-xl gradient-brand flex items-center justify-center shadow-[0_2px_8px_rgba(99,102,241,0.3)] group-hover:shadow-[0_4px_16px_rgba(99,102,241,0.4)] transition-shadow duration-300">
+                <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+              </div>
             </div>
             <div>
-              <span className="text-xl font-bold tracking-tight">Netra AI</span>
-              <span className="hidden sm:block text-[10px] text-white/60 -mt-1 tracking-widest uppercase">Retinal Intelligence</span>
+              <span className="text-lg font-bold tracking-tight text-gray-900">
+                Netra<span className="text-indigo-600">AI</span>
+              </span>
+              <span className="hidden sm:block text-[10px] text-gray-400 -mt-0.5 tracking-widest uppercase font-medium">
+                Retinal Intelligence
+              </span>
             </div>
           </Link>
 
-          <nav className="flex gap-1">
+          <nav className="flex items-center gap-1 bg-gray-100/80 rounded-xl p-1">
             {NAV_ITEMS.map(({ to, label, icon }) => (
               <Link
                 key={to}
                 to={to}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                className={`relative flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
                   pathname === to
-                    ? "bg-white/20 text-white shadow-sm"
-                    : "text-white/70 hover:text-white hover:bg-white/10"
+                    ? "bg-white text-gray-900 shadow-sm"
+                    : "text-gray-500 hover:text-gray-700 hover:bg-white/50"
                 }`}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
@@ -52,6 +69,9 @@ export default function Layout() {
         </div>
       </header>
 
+      {/* Spacer for fixed navbar */}
+      <div className="h-16" />
+
       {/* Main Content */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="fade-in">
@@ -59,14 +79,23 @@ export default function Layout() {
         </div>
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-gray-200/50 py-6 text-center">
-        <p className="text-sm text-gray-400">
-          <span className="font-medium text-gray-500">Netra AI</span> &mdash; AI-Powered Diabetic Retinopathy Screening
-        </p>
-        <p className="text-xs text-gray-300 mt-1">
-          Not a clinical diagnosis. Always consult an ophthalmologist.
-        </p>
+      {/* Minimal footer */}
+      <footer className="border-t border-gray-100 py-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <div className="w-5 h-5 rounded-md gradient-brand flex items-center justify-center">
+              <svg className="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </div>
+            <span className="text-sm text-gray-400">
+              <span className="font-semibold text-gray-500">Netra AI</span> &mdash; AI-Powered Retinal Screening
+            </span>
+          </div>
+          <p className="text-xs text-gray-300">
+            Not a clinical diagnosis. Always consult a qualified ophthalmologist.
+          </p>
+        </div>
       </footer>
     </div>
   );
