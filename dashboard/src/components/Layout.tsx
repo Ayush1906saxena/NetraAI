@@ -3,6 +3,7 @@ import { Link, Outlet, useLocation } from "react-router-dom";
 const NAV_ITEMS = [
   { to: "/", label: "Demo" },
   { to: "/dashboard", label: "Dashboard" },
+  { to: "/analytics", label: "Analytics" },
   { to: "/login", label: "Login" },
 ];
 

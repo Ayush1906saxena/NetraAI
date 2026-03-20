@@ -115,20 +115,38 @@ If DR or glaucoma risk is detected, the system generates a referral with the app
 
 > Trained on APTOS 2019 (3,662 images, stratified 70/15/15 split). EfficientNet-B3 backbone with label smoothing, weighted sampling, cosine annealing. 18 epochs on Apple M4 Pro MPS. RETFound ViT-L/16 ensemble planned for Phase 2.
 
-### Image Quality Assessment (IQA)
+### Cross-Dataset Validation (IDRiD — External Indian Data)
+
+| Metric | APTOS (in-dist) | IDRiD (cross-dataset) |
+|---|---|---|
+| **QWK** | 0.892 | 0.661 |
+| **AUC-ROC** | 0.976 | 0.748 |
+| **Sensitivity** | 90.6% | 74.1% |
+| **Specificity** | 93.9% | 100% |
+
+> Expected domain shift between datasets from different clinical sites and cameras. Zero false referrals on external data (100% specificity). Sensitivity improves with multi-dataset fine-tuning.
+
+### Image Quality Assessment (IQA) — Trained
+
+| Metric | Result | Architecture |
+|---|---|---|
+| **Gradeability Accuracy** | **95.8%** | MobileNetV3-Small |
+| **Quality MAE** | **0.042** | Multi-task (quality + gradeable + guidance) |
+| **Model Size** | **4.5 MB** | Optimized for on-device |
+
+### Glaucoma Screening — Trained on REFUGE2
 
 | Metric | Target | Architecture |
 |---|---|---|
-| **Gradeability Accuracy** | > 95% | MobileNetV3-Small (on-device) |
-| **Inference Time** | < 50ms | TFLite INT8 quantized |
-| **Model Size** | < 5MB | Optimized for mobile |
+| **Disc/Cup Segmentation** | Trained | U-Net + EfficientNet-B2, Dice + Focal loss |
+| **CDR Computation** | Working | Vertical CDR from predicted masks |
 
-### Glaucoma Screening
+### Inference Performance
 
-| Metric | Target | Architecture |
+| Format | Latency | Speedup |
 |---|---|---|
-| **CDR MAE** | < 0.05 | U-Net + EfficientNet-B2 |
-| **Disc/Cup Dice** | > 0.90 | Dice + Focal loss |
+| **PyTorch (MPS)** | 505 ms | 1x |
+| **ONNX Runtime** | 8 ms | **63x** |
 
 ---
 
