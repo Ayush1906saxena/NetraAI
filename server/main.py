@@ -18,7 +18,7 @@ from server.middleware.request_id import RequestIDMiddleware
 from server.api import health, auth, screenings, images, reports, patients, stores, webhooks
 from server.api import demo, report_demo, models as models_router
 from server.api import ws as ws_router
-from server.api import compare, analytics
+from server.api import compare, analytics, eye_health
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,7 @@ IQA_CHECKPOINT = PROJECT_ROOT / "checkpoints" / "iqa_best.pth"
 GLAUCOMA_CHECKPOINT = PROJECT_ROOT / "checkpoints" / "glaucoma_best.pth"
 DR_ENSEMBLE_DIR = PROJECT_ROOT / "checkpoints" / "dr_aptos"
 CALIBRATION_CHECKPOINT = PROJECT_ROOT / "checkpoints" / "calibration.pth"
+MULTI_DISEASE_CHECKPOINT = PROJECT_ROOT / "checkpoints" / "multi_disease" / "best.pth"
 
 
 def _pick_device() -> str:
@@ -111,6 +112,21 @@ async def lifespan(app: FastAPI):
         logger.warning("Temperature scaling not loaded (non-fatal): %s", e)
 
     app.state.inference_service = inference_svc
+
+    # ── Load Multi-Disease classifier (optional — graceful if missing) ──
+    from server.services.multi_disease import MultiDiseaseClassifier
+
+    multi_disease_svc = MultiDiseaseClassifier()
+    try:
+        multi_disease_svc.load_model(str(MULTI_DISEASE_CHECKPOINT), device=device)
+        if multi_disease_svc.is_loaded:
+            logger.info("Multi-disease classifier loaded on %s", device)
+        else:
+            logger.warning("Multi-disease checkpoint not found — service unavailable.")
+    except Exception as e:
+        logger.warning("Multi-disease model not loaded (non-fatal): %s", e)
+
+    app.state.multi_disease_service = multi_disease_svc
 
     # ── Optionally try to load the old ONNX ModelRegistry (graceful) ─
     try:
@@ -203,6 +219,9 @@ def create_app() -> FastAPI:
 
     # ── Analytics routes ──────────────────────────────────────────────
     app.include_router(analytics.router, prefix="/v1/analytics", tags=["analytics"])
+
+    # ── Eye health comprehensive screening ──────────────────────────
+    app.include_router(eye_health.router, prefix="/v1/eye-health", tags=["eye-health"])
 
     # ── WebSocket routes ─────────────────────────────────────────────
     app.include_router(ws_router.router, prefix="/v1/ws", tags=["websocket"])
