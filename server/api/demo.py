@@ -42,6 +42,22 @@ async def demo_analyze(
         description="Inference mode: 'fast' (default), 'tta' (test-time augmentation), "
                     "'high_confidence' (TTA + ensemble + uncertainty).",
     ),
+    diabetes_duration_years: Optional[float] = Query(
+        None,
+        description="Years since diabetes diagnosis (for progression risk estimation).",
+    ),
+    hba1c: Optional[float] = Query(
+        None,
+        description="Most recent HbA1c value in % (for progression risk estimation).",
+    ),
+    patient_age: Optional[int] = Query(
+        None,
+        description="Patient age in years (for multi-condition screening).",
+    ),
+    has_hypertension: Optional[bool] = Query(
+        None,
+        description="Whether patient has hypertension history (for multi-condition screening).",
+    ),
 ) -> dict[str, Any]:
     """
     Upload a single fundus image and get full multi-model analysis.
@@ -56,6 +72,10 @@ async def demo_analyze(
     - analysis.tta_used — boolean
     - analysis.models_used — list of model names that ran
     - analysis.inference_time_ms — total time
+    - analysis.referable_dr — is_referable, probability, confidence_level, clinical_action
+    - analysis.progression — risk_1yr, risk_5yr, risk_factors, rescreen_months
+    - analysis.conditions — list of multi-condition screening results
+    - analysis.summary — plain English summary of all findings
     - meta.model_versions — dict of model names to checkpoint paths
     - meta.ensemble_size — how many models were ensembled
     """
@@ -104,12 +124,24 @@ async def demo_analyze(
         logger.error("Quality check error: %s", e)
         quality = {"score": 0.5, "passed": True, "details": {"error": str(e)}}
 
+    # Build patient info dict from optional query params
+    patient_info: dict = {}
+    if diabetes_duration_years is not None:
+        patient_info["diabetes_duration_years"] = diabetes_duration_years
+    if hba1c is not None:
+        patient_info["hba1c"] = hba1c
+    if patient_age is not None:
+        patient_info["patient_age"] = patient_age
+    if has_hypertension is not None:
+        patient_info["has_hypertension"] = has_hypertension
+
     # Run full multi-model analysis
     try:
         result = await inference_svc.analyze_fundus(
             image_bytes,
             use_tta=use_tta,
             high_confidence_mode=high_confidence_mode,
+            patient_info=patient_info if patient_info else None,
         )
     except Exception as e:
         logger.error("Inference error: %s", e, exc_info=True)
@@ -125,6 +157,10 @@ async def demo_analyze(
         "analysis": result.get("analysis", {}),
         "referral": result.get("referral", {}),
         "gradcam": result.get("gradcam", {}),
+        "referable_dr": result.get("referable_dr", {}),
+        "progression": result.get("progression", {}),
+        "conditions": result.get("conditions", []),
+        "summary": result.get("summary", ""),
         "model_info": result.get("model_info", {}),
         "meta": result.get("meta", {}),
     }

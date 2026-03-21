@@ -18,6 +18,7 @@ from server.middleware.request_id import RequestIDMiddleware
 from server.api import health, auth, screenings, images, reports, patients, stores, webhooks
 from server.api import demo, report_demo, models as models_router
 from server.api import ws as ws_router
+from server.api import compare, analytics
 
 logger = logging.getLogger(__name__)
 
@@ -196,6 +197,12 @@ def create_app() -> FastAPI:
     app.include_router(demo.router, prefix="/v1/demo", tags=["demo"])
     app.include_router(report_demo.router, prefix="/v1/demo", tags=["demo-report"])
     app.include_router(models_router.router, prefix="/v1/models", tags=["models"])
+
+    # ── Compare eyes route ────────────────────────────────────────────
+    app.include_router(compare.router, prefix="/v1/demo", tags=["demo-compare"])
+
+    # ── Analytics routes ──────────────────────────────────────────────
+    app.include_router(analytics.router, prefix="/v1/analytics", tags=["analytics"])
 
     # ── WebSocket routes ─────────────────────────────────────────────
     app.include_router(ws_router.router, prefix="/v1/ws", tags=["websocket"])

@@ -4,7 +4,7 @@ import ResultCard from "../components/ResultCard";
 import GradcamViewer from "../components/GradcamViewer";
 import ProbabilityChart from "../components/ProbabilityChart";
 import ReferralBanner from "../components/ReferralBanner";
-import { analyzeImage, type AnalysisResult } from "../api/client";
+import { analyzeImage, type AnalysisResult, type ConditionScreening } from "../api/client";
 
 /* ─── Per-grade clinical content ─────────────────────────────────────── */
 
@@ -250,6 +250,61 @@ function ExpandableSection({ title, icon, children, defaultOpen = false }: {
   );
 }
 
+/* ─── Risk level badge helper ────────────────────────────────────────── */
+
+const RISK_BADGE_STYLES: Record<string, string> = {
+  none: "bg-gray-100 text-gray-600",
+  low: "bg-emerald-100 text-emerald-700",
+  moderate: "bg-amber-100 text-amber-700",
+  high: "bg-red-100 text-red-700",
+  very_high: "bg-red-200 text-red-800",
+};
+
+function RiskBadge({ level }: { level: string }) {
+  const style = RISK_BADGE_STYLES[level] || RISK_BADGE_STYLES.none;
+  const label = level === "very_high" ? "Very High" : level.charAt(0).toUpperCase() + level.slice(1);
+  return (
+    <span className={`inline-block px-2.5 py-1 rounded-lg text-xs font-semibold ${style}`}>
+      {label}
+    </span>
+  );
+}
+
+/* ─── Condition screening row ────────────────────────────────────────── */
+
+function ConditionRow({ condition }: { condition: ConditionScreening }) {
+  return (
+    <details className="group border border-gray-100 rounded-xl overflow-hidden">
+      <summary className="px-5 py-4 cursor-pointer flex items-center gap-3 hover:bg-gray-50/50 transition-colors select-none list-none [&::-webkit-details-marker]:hidden">
+        <RiskBadge level={condition.risk_level} />
+        <span className="text-sm font-semibold text-gray-800 flex-1">{condition.condition_name}</span>
+        <svg
+          className="w-4 h-4 text-gray-400 transition-transform duration-300 group-open:rotate-180"
+          fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </summary>
+      <div className="px-5 pb-4 pt-1 space-y-3">
+        <p className="text-xs text-gray-500 leading-relaxed">{condition.description}</p>
+        {condition.findings.length > 0 && (
+          <ul className="space-y-1.5">
+            {condition.findings.map((f, i) => (
+              <li key={i} className="text-sm text-gray-600 flex items-start gap-2">
+                <span className="mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0 bg-indigo-400" />
+                {f}
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="p-3 rounded-lg bg-indigo-50 border border-indigo-100">
+          <p className="text-xs font-medium text-indigo-700">{condition.recommendation}</p>
+        </div>
+      </div>
+    </details>
+  );
+}
+
 /* ─── Page ───────────────────────────────────────────────────────────── */
 
 export default function DemoPage() {
@@ -367,6 +422,23 @@ export default function DemoPage() {
             </div>
           </div>
 
+          {/* Plain English Summary */}
+          {result.summary && (
+            <div className="card-elevated p-5 bg-indigo-50/50 border border-indigo-100 fade-in-up">
+              <div className="flex items-start gap-3">
+                <div className="flex-shrink-0 w-9 h-9 rounded-xl bg-indigo-100 flex items-center justify-center">
+                  <svg className="w-5 h-5 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-indigo-900 mb-1">Summary</h3>
+                  <p className="text-sm text-indigo-800 leading-relaxed">{result.summary}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Confidence gauge + Referral side by side */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <ResultCard
@@ -379,6 +451,101 @@ export default function DemoPage() {
                 urgency={result.referral.urgency}
                 recommendation={result.referral.recommendation}
               />
+            )}
+          </div>
+
+          {/* Referable DR + Progression Risk side by side */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Referable DR Card */}
+            {result.referable_dr && (
+              <InfoCard
+                icon={
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
+                    result.referable_dr.is_referable ? "bg-red-100" : "bg-emerald-100"
+                  }`}>
+                    <svg className={`w-5 h-5 ${result.referable_dr.is_referable ? "text-red-600" : "text-emerald-600"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  </div>
+                }
+                title="Referable DR"
+              >
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <span className={`text-2xl font-bold ${
+                      result.referable_dr.is_referable ? "text-red-600" : "text-emerald-600"
+                    }`}>
+                      {result.referable_dr.is_referable ? "Yes" : "No"}
+                    </span>
+                    <RiskBadge level={result.referable_dr.confidence_level === "high" ? (result.referable_dr.is_referable ? "high" : "low") : "moderate"} />
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+                      <span>Referable Probability</span>
+                      <span className="font-semibold text-gray-700">{(result.referable_dr.referable_probability * 100).toFixed(1)}%</span>
+                    </div>
+                    <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          result.referable_dr.is_referable
+                            ? "bg-gradient-to-r from-red-400 to-red-600"
+                            : "bg-gradient-to-r from-emerald-400 to-emerald-600"
+                        }`}
+                        style={{ width: `${Math.min(result.referable_dr.referable_probability * 100, 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-500 leading-relaxed">{result.referable_dr.clinical_action}</p>
+                </div>
+              </InfoCard>
+            )}
+
+            {/* Progression Risk Card */}
+            {result.progression && (
+              <InfoCard
+                icon={
+                  <div className="w-9 h-9 rounded-xl bg-orange-100 flex items-center justify-center">
+                    <svg className="w-5 h-5 text-orange-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                    </svg>
+                  </div>
+                }
+                title="Progression Risk"
+              >
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3 mb-1">
+                    <RiskBadge level={result.progression.risk_level} />
+                    <span className="text-xs text-gray-500">
+                      Rescreen in {result.progression.recommended_rescreen_months} months
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-3 rounded-lg bg-gray-50 text-center">
+                      <p className="text-2xl font-bold text-gray-800">
+                        {(result.progression.progression_risk_1yr * 100).toFixed(0)}%
+                      </p>
+                      <p className="text-xs text-gray-500 mt-0.5">1-Year Risk</p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-gray-50 text-center">
+                      <p className="text-2xl font-bold text-gray-800">
+                        {(result.progression.progression_risk_5yr * 100).toFixed(0)}%
+                      </p>
+                      <p className="text-xs text-gray-500 mt-0.5">5-Year Risk</p>
+                    </div>
+                  </div>
+                  {result.progression.risk_factors.length > 0 && (
+                    <ul className="space-y-1">
+                      {result.progression.risk_factors.slice(0, 3).map((factor, i) => (
+                        <li key={i} className="text-xs text-gray-500 flex items-start gap-1.5">
+                          <span className="mt-1 w-1 h-1 rounded-full flex-shrink-0 bg-orange-400" />
+                          {factor}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </InfoCard>
             )}
           </div>
 
@@ -438,6 +605,31 @@ export default function DemoPage() {
               </ul>
             </InfoCard>
           </div>
+
+          {/* Multi-Condition Screening */}
+          {result.conditions && result.conditions.length > 0 && (
+            <ExpandableSection
+              title="Multi-Condition Screening"
+              icon={
+                <div className="w-8 h-8 rounded-lg bg-violet-100 flex items-center justify-center">
+                  <svg className="w-4.5 h-4.5 text-violet-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m5.231 13.481L15 17.25m-4.5-15H5.625c-.621 0-1.125.504-1.125 1.125v16.5c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9zm3.75 11.625a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+                  </svg>
+                </div>
+              }
+              defaultOpen={result.conditions.some(c => c.risk_level === "high")}
+            >
+              <p className="text-xs text-gray-500 mb-4 leading-relaxed">
+                Heuristic screening for additional ocular conditions based on the fundus analysis.
+                These are not definitive diagnoses but flags for further clinical investigation.
+              </p>
+              <div className="space-y-3">
+                {result.conditions.map((condition, i) => (
+                  <ConditionRow key={i} condition={condition} />
+                ))}
+              </div>
+            </ExpandableSection>
+          )}
 
           {/* Expandable: Action Plan */}
           <ExpandableSection

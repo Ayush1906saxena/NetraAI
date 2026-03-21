@@ -8,6 +8,7 @@ import DemoPage from "./pages/DemoPage";
 import DashboardPage from "./pages/DashboardPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import LoginPage from "./pages/LoginPage";
+import CompareEyesPage from "./pages/CompareEyesPage";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
@@ -19,6 +20,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         {/* App pages with shared navbar / footer */}
         <Route element={<Layout />}>
           <Route path="/demo" element={<DemoPage />} />
+          <Route path="/compare" element={<CompareEyesPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/login" element={<LoginPage />} />

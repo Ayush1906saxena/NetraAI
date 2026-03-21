@@ -13,6 +13,31 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+export interface ReferableDR {
+  is_referable: boolean;
+  referable_probability: number;
+  confidence_level: string;
+  clinical_action: string;
+  explanation: string;
+}
+
+export interface ProgressionRisk {
+  progression_risk_1yr: number;
+  progression_risk_5yr: number;
+  risk_level: string;
+  risk_factors: string[];
+  recommended_rescreen_months: number;
+  explanation: string;
+}
+
+export interface ConditionScreening {
+  condition_name: string;
+  risk_level: string;
+  findings: string[];
+  description: string;
+  recommendation: string;
+}
+
 export interface AnalysisResult {
   grade: number;
   grade_label: string;
@@ -23,6 +48,10 @@ export interface AnalysisResult {
     urgency: string;
     recommendation: string;
   };
+  referable_dr: ReferableDR | null;
+  progression: ProgressionRisk | null;
+  conditions: ConditionScreening[];
+  summary: string;
 }
 
 export interface Screening {
@@ -57,6 +86,79 @@ export async function analyzeImage(file: File): Promise<AnalysisResult> {
       urgency: referral.urgency || "none",
       recommendation: referral.recommendation || "",
     },
+    referable_dr: data.referable_dr || null,
+    progression: data.progression || null,
+    conditions: data.conditions || [],
+    summary: data.summary || "",
+  };
+}
+
+export interface CompareEyeResult {
+  grade: number;
+  grade_label: string;
+  confidence: number;
+  probabilities: Record<string, number>;
+  gradcam_base64: string;
+  referral: {
+    urgency: string;
+    recommendation: string;
+  };
+}
+
+export interface CompareEyesResponse {
+  status: string;
+  left_filename: string;
+  right_filename: string;
+  left_results: CompareEyeResult;
+  right_results: CompareEyeResult;
+  comparison: {
+    grade_difference: number;
+    cdr_difference: number | null;
+    asymmetry_flag: boolean;
+    asymmetry_details: string[];
+    worse_eye: string;
+    clinical_significance: string;
+    left_grade: number;
+    left_grade_name: string;
+    right_grade: number;
+    right_grade_name: string;
+  };
+}
+
+function _mapEyeResult(raw: Record<string, unknown>): CompareEyeResult {
+  const analysis = (raw.analysis ?? {}) as Record<string, unknown>;
+  const dr = (analysis.dr ?? {}) as Record<string, unknown>;
+  const referral = (analysis.referral ?? raw.referral ?? {}) as Record<string, unknown>;
+  const gradcam = (analysis.gradcam ?? raw.gradcam ?? {}) as Record<string, unknown>;
+
+  return {
+    grade: (dr.grade as number) ?? 0,
+    grade_label: (dr.grade_name as string) || (dr.grade_label as string) || "Unknown",
+    confidence: (dr.confidence as number) ?? 0,
+    probabilities: (dr.probabilities as Record<string, number>) || {},
+    gradcam_base64: (gradcam.overlay_png_base64 as string) || "",
+    referral: {
+      urgency: (referral.urgency as string) || "none",
+      recommendation: (referral.recommendation as string) || "",
+    },
+  };
+}
+
+export async function compareEyes(leftFile: File, rightFile: File): Promise<CompareEyesResponse> {
+  const form = new FormData();
+  form.append("left_eye", leftFile);
+  form.append("right_eye", rightFile);
+  const { data } = await api.post("/demo/compare-eyes", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+
+  return {
+    status: data.status,
+    left_filename: data.left_filename,
+    right_filename: data.right_filename,
+    left_results: _mapEyeResult(data.left_results || {}),
+    right_results: _mapEyeResult(data.right_results || {}),
+    comparison: data.comparison,
   };
 }
 

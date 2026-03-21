@@ -684,6 +684,7 @@ class InferenceService:
         use_uncertainty: bool = True,
         use_ensemble: bool = True,
         high_confidence_mode: bool = False,
+        patient_info: Optional[dict[str, Any]] = None,
     ) -> dict[str, Any]:
         """
         Full multi-model analysis pipeline:
@@ -703,9 +704,12 @@ class InferenceService:
             use_uncertainty: Whether to run MC Dropout uncertainty estimation
             use_ensemble: Whether to use ensemble models if available
             high_confidence_mode: Enable TTA + ensemble for maximum accuracy
+            patient_info: Optional dict with diabetes_duration_years, hba1c,
+                          patient_age, has_hypertension for enhanced risk analysis.
 
         Returns:
-            dict with dr, iqa, glaucoma, uncertainty, referral, gradcam, model_info, meta
+            dict with dr, iqa, glaucoma, uncertainty, referral, gradcam,
+            referable_dr, progression, conditions, summary, model_info, meta
 
         Raises:
             ValueError: If image fails validation (bad format, size).
@@ -965,6 +969,84 @@ class InferenceService:
         if "iqa" not in result:
             result["iqa"] = None
 
+        # ── Referable DR Classification ──────────────────────────────
+        try:
+            from server.services.referable_dr import classify_referable_dr
+            referable_dr_result = classify_referable_dr(
+                [round(float(p), 4) for p in final_probs]
+            )
+        except Exception as e:
+            logger.warning("Referable DR classification failed: %s", e)
+            referable_dr_result = None
+
+        # ── Progression Risk Estimation ──────────────────────────────
+        try:
+            from server.services.progression_risk import estimate_progression_risk
+            p_info = patient_info or {}
+            progression_result = estimate_progression_risk(
+                current_grade=grade,
+                confidence=final_confidence,
+                diabetes_duration_years=p_info.get("diabetes_duration_years"),
+                hba1c=p_info.get("hba1c"),
+            )
+        except Exception as e:
+            logger.warning("Progression risk estimation failed: %s", e)
+            progression_result = None
+
+        # ── Multi-Condition Screening ────────────────────────────────
+        try:
+            from server.services.multi_condition import screen_multi_condition
+            p_info = patient_info or {}
+            glaucoma_cdr_val = None
+            if result.get("glaucoma") and result["glaucoma"].get("cdr") is not None:
+                glaucoma_cdr_val = result["glaucoma"]["cdr"]
+            iqa_score_val = None
+            if result.get("iqa") and result["iqa"].get("quality_score") is not None:
+                iqa_score_val = result["iqa"]["quality_score"]
+            conditions_result = screen_multi_condition(
+                dr_grade=grade,
+                confidence=final_confidence,
+                glaucoma_cdr=glaucoma_cdr_val,
+                iqa_score=iqa_score_val,
+                has_gradcam=bool(gradcam_b64),
+                patient_age=p_info.get("patient_age"),
+                has_hypertension=bool(p_info.get("has_hypertension")),
+            )
+        except Exception as e:
+            logger.warning("Multi-condition screening failed: %s", e)
+            conditions_result = []
+
+        # ── Summary Generation ───────────────────────────────────────
+        summary_parts = []
+        summary_parts.append(
+            f"DR screening result: {DR_GRADE_NAMES[grade]} (Grade {grade}/4) "
+            f"with {final_confidence:.0%} confidence."
+        )
+        if referable_dr_result:
+            if referable_dr_result["is_referable"]:
+                summary_parts.append(
+                    f"This is classified as REFERABLE DR "
+                    f"({referable_dr_result['referable_probability']:.0%} probability) "
+                    f"requiring ophthalmologist evaluation."
+                )
+            else:
+                summary_parts.append(
+                    "This is classified as non-referable; routine follow-up is recommended."
+                )
+        if progression_result and grade < 4:
+            summary_parts.append(
+                f"Estimated 1-year progression risk is "
+                f"{progression_result['progression_risk_1yr']:.0%}, "
+                f"with rescreening recommended in "
+                f"{progression_result['recommended_rescreen_months']} months."
+            )
+        flagged = [c for c in conditions_result if c.get("risk_level") not in ("none",)]
+        if flagged:
+            names = ", ".join(c["condition_name"] for c in flagged)
+            summary_parts.append(f"Additional conditions flagged for review: {names}.")
+
+        summary = " ".join(summary_parts)
+
         return {
             "status": "success",
             "analysis": result,
@@ -982,6 +1064,10 @@ class InferenceService:
                 "overlay_png_base64": gradcam_b64,
                 "has_gradcam": bool(gradcam_b64),
             },
+            "referable_dr": referable_dr_result,
+            "progression": progression_result,
+            "conditions": conditions_result,
+            "summary": summary,
             "model_info": self._get_model_info(),
             "meta": self._get_meta(),
         }
